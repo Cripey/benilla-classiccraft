@@ -86,8 +86,15 @@ const PROXY_ENTRIES: std::ops::RangeInclusive<u32> = 990001..=990003;
 /// The mod's stand-in hit flags (`McwowActorEntity.HIT_*`) and the server's (`ClassicCraft::HitFlags`).
 const MC_HIT_PROJECTILE: u32 = 1;
 const MC_HIT_CRITICAL: u32 = 2;
+/// 2026-10-04: a damage-over-time tick, frost's slow, and the spell school in bits 8-10
+/// (`SpellSchools`: 0 physical .. 6 arcane) - passed to the server as they are.
+const MC_HIT_PERIODIC: u32 = 16;
+const MC_HIT_SLOW: u32 = 32;
+const HIT_SCHOOL_BITS: u32 = 0x7 << 8;
 const CC_HIT_CRIT: u32 = 1;
 const CC_HIT_PROJECTILE: u32 = 2;
+const CC_HIT_PERIODIC: u32 = 4;
+const CC_HIT_SLOW: u32 = 8;
 /// How often the server is reminded who owns our health (s): it forgets on a relog or a restart.
 const HELLO_PERIOD: f32 = 10.0;
 
@@ -579,6 +586,13 @@ fn handle_inbox(
                 if flags & MC_HIT_PROJECTILE != 0 {
                     cc_flags |= CC_HIT_PROJECTILE;
                 }
+                if flags & MC_HIT_PERIODIC != 0 {
+                    cc_flags |= CC_HIT_PERIODIC;
+                }
+                if flags & MC_HIT_SLOW != 0 {
+                    cc_flags |= CC_HIT_SLOW;
+                }
+                cc_flags |= flags & HIT_SCHOOL_BITS;
                 let mut body = Vec::with_capacity(21);
                 body.push(u8::from(attacker != 0));
                 body.extend_from_slice(&attacker.to_le_bytes());
