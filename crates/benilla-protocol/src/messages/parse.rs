@@ -223,7 +223,7 @@ fn parse_server_body(
     let mut r: &[u8] = cursor;
     let packet = match opcode {
         // classiccraft (fork only): read whole, decoded by the classiccraft crate.
-        opcode::SMSG_CC_DAMAGE | opcode::SMSG_CC_XP_DROP | opcode::SMSG_CC_KILL => {
+        opcode::SMSG_CC_DAMAGE | opcode::SMSG_CC_XP_DROP | opcode::SMSG_CC_KILL | opcode::SMSG_CC_HARVEST => {
             let body = r.to_vec();
             r = &r[r.len()..];
             ServerPacket::ClassicCraft { opcode, body }

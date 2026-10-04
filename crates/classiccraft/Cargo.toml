@@ -21,6 +21,8 @@ benilla-ui = { path = "../benilla-ui" }
 bevy = { workspace = true }
 avian3d = "0.6"
 memmap2 = "0.9.10"
+benilla-m2 = { path = "../benilla-m2" }
+image = { version = "0.25", default-features = false, features = ["png"] }
 anyhow = "1"
 
 [build-dependencies]

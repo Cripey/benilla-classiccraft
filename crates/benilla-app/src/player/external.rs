@@ -249,10 +249,15 @@ pub struct CrosshairTarget {
 }
 
 /// The cursor kinds a [`CrosshairTarget`] names, by index (0 = none).
-pub const CROSSHAIR_KINDS: [&str; 16] = [
+pub const CROSSHAIR_KINDS: [&str; 17] = [
     "", "attack", "speak", "loot", "interact", "buy", "read", "trainer", "taxi", "skin", "mail",
-    "mine", "herbs", "picklock", "repair", "cast",
+    "mine", "herbs", "picklock", "repair", "cast", "doodad",
 ];
+
+/// [`CrosshairTarget::kind`] for a placed doodad under the crosshair (tree chopping, 2026-10-04):
+/// `guid` is the hull's stable id ([`benilla_world::object_surface::NamedHull::id`]), `name` its
+/// model path; the driver decides what it is. Never a WoW right-click.
+pub const CROSSHAIR_DOODAD: u8 = 16;
 
 /// The driver's right-click on [`CrosshairTarget`], taken by `target::crosshair` this frame.
 #[derive(Resource, Default)]
@@ -297,6 +302,11 @@ pub struct UnitSnapshot {
     /// `CanAttack(player, unit)`, the reference's attackability (`target::can_attack`).
     pub attackable: bool,
     pub dead: bool,
+    /// The visible model's size (yards, 2026-10-04, hitboxes): its armed-idle box
+    /// ([`crate::entities::ModelBound`]) times the unit's scale - height over the feet, and the
+    /// larger of its two flat extents. 0 until the model has loaded.
+    pub model_height: f32,
+    pub model_width: f32,
 }
 
 /// classiccraft: the creatures within [`UNIT_RANGE`] of us, nearest first, refreshed each frame,
@@ -323,6 +333,7 @@ fn publish_units(
         &crate::net::NetEntity,
         &crate::net::ObjectStore,
         &GlobalTransform,
+        Option<&crate::entities::ModelBound>,
     )>,
     me: Query<&crate::net::ObjectStore, With<crate::net::SelfPlayer>>,
     factions: Option<Res<crate::target::Factions>>,
@@ -339,7 +350,7 @@ fn publish_units(
     if !player.active {
         return;
     }
-    for (guid, net, store, gt) in &units {
+    for (guid, net, store, gt, bound) in &units {
         if net.kind != benilla_protocol::EntityKind::Unit {
             continue;
         }
@@ -349,6 +360,11 @@ fn publish_units(
         }
         let f = &store.0;
         let fwd = gt.forward();
+        let (model_height, model_width) = bound.map_or((0.0, 0.0), |b| {
+            let s = gt.scale();
+            let (min, max) = (b.0.min(), b.0.max());
+            (max.y * s.y, (max.x - min.x).max(max.z - min.z) * s.x)
+        });
         out.units.push(UnitSnapshot {
             guid: guid.0,
             wow_pos: benilla_assets::coords::bevy_to_wow(pos),
@@ -371,6 +387,8 @@ fn publish_units(
                 me,
             ),
             dead: f.unit_is_dead(),
+            model_height,
+            model_width,
         });
     }
     let here = player.pos;

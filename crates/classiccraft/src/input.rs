@@ -481,12 +481,15 @@ fn forward_popups(
     if *frames % 6 != 0 {
         return;
     }
-    // "n\x1ftext\x1fbutton1\x1fbutton2" of the first shown popup, "" for none.
+    // "n\x1ftext\x1fbutton1\x1fbutton2" of the first shown popup, "" for none. WoW's death popup
+    // ("Release Spirit") stays in WoW: Minecraft's own death screen is the release (its Respawn
+    // resurrects at the bed or hearthstone location, 2026-10-04) - forwarded, it released the spirit
+    // to a graveyard first and the death screen had to be answered again.
     let found = script
         .eval::<String>(
             r#"for i = 1, 4 do
                 local f = getglobal("StaticPopup" .. i)
-                if f and f:IsShown() then
+                if f and f:IsShown() and f.which ~= "DEATH" then
                     local t = getglobal("StaticPopup" .. i .. "Text")
                     local function label(n)
                         local b = getglobal("StaticPopup" .. i .. "Button" .. n)

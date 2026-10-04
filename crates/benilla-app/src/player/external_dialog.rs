@@ -60,6 +60,11 @@ pub struct DialogItem {
     pub item_level: u32,
     pub required_level: u32,
     pub name: String,
+    /// classiccraft (2026-10-04): the item's stats `(ItemModType, value)`, resistances (holy, fire,
+    /// nature, frost, shadow, arcane) and damage school - the driver sets enchantments from them.
+    pub stats: Vec<(u32, i32)>,
+    pub resistances: [i32; 6],
+    pub dmg_type: u32,
 }
 
 /// An NPC window for the driver to show.
@@ -149,6 +154,9 @@ fn item_row(v: &QuestItemView, items: &Items, commands: &NetCommands) -> Option<
         item_level: t.item_level,
         required_level: t.required_level,
         name: t.name.clone(),
+        stats: t.stats.clone(),
+        resistances: t.resistances,
+        dmg_type: t.dmg_type,
     })
 }
 
@@ -269,6 +277,9 @@ fn forward_quest_done(
                 item_level: t.map_or(0, |t| t.item_level),
                 required_level: t.map_or(0, |t| t.required_level),
                 name: t.map_or_else(String::new, |t| t.name.clone()),
+                stats: t.map_or_else(Vec::new, |t| t.stats.clone()),
+                resistances: t.map_or([0; 6], |t| t.resistances),
+                dmg_type: t.map_or(0, |t| t.dmg_type),
             }
         })
         .collect();

@@ -7,6 +7,11 @@
 
 use super::*;
 use crate::player::external::{self, CrosshairTarget, CrosshairUse};
+use benilla_world::object_surface::ObjectUnderfoot;
+use benilla_world::view::WorldCamera;
+
+/// How far the crosshair looks for a doodad (yd) when nothing WoW-interactive is under it.
+const DOODAD_REACH: f32 = 12.0;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn crosshair_target_and_click(
@@ -22,6 +27,9 @@ pub(super) fn crosshair_target_and_click(
     mut use_: ResMut<CrosshairUse>,
     mut press: ResMut<PressPick>,
     mut clicks: MessageWriter<WorldRightClick>,
+    doodads: ObjectUnderfoot,
+    camera: Query<(&Camera, &GlobalTransform), With<WorldCamera>>,
+    window: Query<&Window, With<bevy::window::PrimaryWindow>>,
 ) {
     let on = external::crosshair();
     let next = if !on {
@@ -44,12 +52,13 @@ pub(super) fn crosshair_target_and_click(
             unable: cursor.unable,
         }
     } else {
-        CrosshairTarget::default()
+        // Nothing WoW-interactive: a placed doodad's hull (a tree trunk, for chopping).
+        doodad_target(&doodads, &camera, &window).unwrap_or_default()
     };
     if *target != next {
         *target = next;
     }
-    if std::mem::take(&mut use_.pending) && on && target.kind != 0 {
+    if std::mem::take(&mut use_.pending) && on && target.kind != 0 && target.kind != external::CROSSHAIR_DOODAD {
         *press = PressPick {
             hovered: *hovered,
             object: *object,
@@ -65,6 +74,31 @@ pub(super) fn crosshair_target_and_click(
             external::CROSSHAIR_KINDS[target.kind as usize]
         );
     }
+}
+
+/// The doodad hull on the crosshair's ray, as a [`external::CROSSHAIR_DOODAD`] target.
+fn doodad_target(
+    doodads: &ObjectUnderfoot,
+    camera: &Query<(&Camera, &GlobalTransform), With<WorldCamera>>,
+    window: &Query<&Window, With<bevy::window::PrimaryWindow>>,
+) -> Option<CrosshairTarget> {
+    let (camera, cam_tf) = camera.single().ok()?;
+    let cursor = external::pick_point(window.single().ok()?)?;
+    let ray = camera.viewport_to_world(cam_tf, cursor).ok()?;
+    let (hull, distance) = doodads.doodad_on_ray(ray.origin, ray.direction, DOODAD_REACH)?;
+    // The path's tail (zone folder and file): the driver's name field is short.
+    let path: &str = &hull.model;
+    let mut cut = path.len().saturating_sub(90);
+    while !path.is_char_boundary(cut) {
+        cut += 1;
+    }
+    Some(CrosshairTarget {
+        guid: hull.id,
+        kind: external::CROSSHAIR_DOODAD,
+        name: path[cut..].to_string(),
+        distance,
+        unable: false,
+    })
 }
 
 /// WoW's cursor as [`external::CROSSHAIR_KINDS`]' index; Point (nothing to do) is 0.

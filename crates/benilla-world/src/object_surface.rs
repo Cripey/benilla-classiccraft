@@ -43,6 +43,9 @@ pub struct NamedHull {
     pub min: Vec3,
     pub max: Vec3,
     pub model: Arc<str>,
+    /// A stable id for this placed object (tree chopping, 2026-10-04): FNV-1a of the model path and
+    /// the hull's bounds to a tenth of a yard - the same tree gets the same id every session.
+    pub id: u64,
 }
 
 impl NamedHull {
@@ -52,7 +55,13 @@ impl NamedHull {
             (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY)),
             |(lo, hi), v| (lo.min(*v), hi.max(*v)),
         );
-        Self { min, max, model }
+        let mut id: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut eat = |b: u8| id = (id ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+        model.bytes().for_each(&mut eat);
+        for v in [min.x, min.y, min.z, max.x, max.y, max.z] {
+            ((v * 10.0).round() as i32).to_le_bytes().into_iter().for_each(&mut eat);
+        }
+        Self { min, max, model, id }
     }
 
     fn holds(&self, p: Vec3) -> bool {
@@ -130,6 +139,23 @@ impl ObjectUnderfoot<'_, '_> {
                     texture,
                 })
             }
+        }
+    }
+}
+
+impl ObjectUnderfoot<'_, '_> {
+    /// The placed doodad (its hull) a ray meets first within `max` yards, and how far along: the
+    /// crosshair's tree for chopping. `None` for terrain, buildings and GameObjects.
+    pub fn doodad_on_ray(&self, origin: Vec3, dir: Dir3, max: f32) -> Option<(NamedHull, f32)> {
+        let hit = self.collision.ray_body(origin, dir, max)?;
+        let point = origin + *dir * hit.distance;
+        match self.sources.get(hit.entity).ok()? {
+            SurfaceSource::Hulls(hulls) => hulls
+                .iter()
+                .filter(|h| h.holds(point))
+                .min_by(|a, b| a.volume().total_cmp(&b.volume()))
+                .map(|h| (h.clone(), hit.distance)),
+            SurfaceSource::Wmo { .. } => None,
         }
     }
 }

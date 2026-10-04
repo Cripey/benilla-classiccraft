@@ -214,6 +214,16 @@ fn send_dialogs(
                 out.extend_from_slice(&v.to_le_bytes());
             }
             put(&it.name, out);
+            // 2026-10-04: stats (n, then type/value pairs), 6 resistances, damage school.
+            out.extend_from_slice(&(it.stats.len() as u32).to_le_bytes());
+            for &(t, v) in &it.stats {
+                out.extend_from_slice(&t.to_le_bytes());
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+            for r in it.resistances {
+                out.extend_from_slice(&r.to_le_bytes());
+            }
+            out.extend_from_slice(&it.dmg_type.to_le_bytes());
         }
     }
     for d in dialogs.read() {

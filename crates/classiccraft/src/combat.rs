@@ -4,12 +4,15 @@
 //!   a ring of the server's hits on what Minecraft owns (`SMSG_CC_DAMAGE`: the player, or a mob).
 //! - Minecraft's hits on stand-ins (`REN_HIT`) go to the server as `CMSG_CC_HIT`, from the player or
 //!   from the hitting mob's proxy; its mob list (`REN_MOBS`) becomes `CMSG_CC_ACTORS`, the proxies.
-//! - Minecraft death (`REN_EVENT` 1) is `CMSG_CC_DIED`; Minecraft respawn (2) releases the spirit.
+//! - Minecraft death (`REN_EVENT` 1) is `CMSG_CC_DIED`; Minecraft's respawn (`REN_RESPAWN`) is
+//!   `CMSG_CC_RESPAWN`: the character comes back at Steve's bed or its hearthstone location.
 //! - `CMSG_CC_HELLO` tells the server whether Minecraft owns our health (while it drives us).
 //! - Kill XP waits in Minecraft's XP orbs (2026-10-02): `SMSG_CC_XP_DROP` goes into the same ring as
 //!   kind [`RING_XP_DROP`]; a picked-up orb (`REN_XP_CLAIM`) is `CMSG_CC_XP_CLAIM`. The level bar
 //!   (`PLAYER_XP`, `PLAYER_NEXT_LEVEL_XP`) rides in the header.
 //! - Kills (2026-10-03): `SMSG_CC_KILL` goes into the ring as kind [`RING_KILL`] for the mod's loot.
+//! - Ore veins (2026-10-04): `REN_HARVEST` is `CMSG_CC_HARVEST`; the answer `SMSG_CC_HARVEST` goes into
+//!   the ring as kind [`RING_HARVEST`] for the mod to drop the ore.
 
 use std::collections::HashSet;
 use std::fs::OpenOptions;
@@ -25,11 +28,11 @@ use crate::bridge::{Bridge, S};
 
 const PATH: &str = "/dev/shm/classiccraft_actors_v1.shm";
 const MAGIC: u32 = 0x6D63_7761; // "mcwa"
-const VERSION: u32 = 6;
+const VERSION: u32 = 7; // 7: + the visible model's height and width per actor
 const MAX_ACTORS: usize = 64;
 const HEADER: usize = 64;
-const ACTOR_BYTES: usize = 72;
-const RING_HEAD: usize = HEADER + MAX_ACTORS * ACTOR_BYTES; // 4672
+const ACTOR_BYTES: usize = 80;
+const RING_HEAD: usize = HEADER + MAX_ACTORS * ACTOR_BYTES; // 5184
 const RING_DATA: usize = RING_HEAD + 8;
 const RING_ENTRIES: u64 = 256;
 const RING_ENTRY: usize = 32;
@@ -52,7 +55,7 @@ const ACTOR_ATTACKABLE: u32 = 0x1;
 const ACTOR_DEAD: u32 = 0x2;
 const ACTOR_TARGETS_ME: u32 = 0x4;
 
-// benilla_protocol::messages::opcode (fork): CMSG_CC_* / SMSG_CC_DAMAGE, and the stock repop.
+// benilla_protocol::messages::opcode (fork): CMSG_CC_* / SMSG_CC_DAMAGE.
 const CMSG_CC_HELLO: u16 = 0x033C;
 const CMSG_CC_HIT: u16 = 0x033D;
 const CMSG_CC_ACTORS: u16 = 0x033E;
@@ -69,7 +72,14 @@ const SMSG_CC_KILL: u16 = 0x0345;
 const RING_XP_DROP: u8 = 0x10;
 /// ... and for a kill (`SMSG_CC_KILL`).
 const RING_KILL: u8 = 0x11;
-const CMSG_REPOP_REQUEST: u16 = 0x015A;
+/// Release spirit, Minecraft's way: u32 kind (0 = hearthstone location, 1 = at), u32 map, f32 x, y, z, o.
+const CMSG_CC_RESPAWN: u16 = 0x0346;
+/// An ore vein mined with a Minecraft pickaxe (2026-10-04): u64 the vein's guid.
+const CMSG_CC_HARVEST: u16 = 0x0347;
+/// ... the server's answer: u64 vein, u32 entry, f32 x, y, z, u8 ok, u8 used up.
+const SMSG_CC_HARVEST: u16 = 0x0348;
+/// A ring entry's kind byte for a harvested vein (`SMSG_CC_HARVEST`).
+const RING_HARVEST: u8 = 0x12;
 
 /// The server's proxy creatures (`sql/custom/classiccraft_proxies.sql`): never mirrored back.
 const PROXY_ENTRIES: std::ops::RangeInclusive<u32> = 990001..=990003;
@@ -110,6 +120,10 @@ pub enum McMsg {
     Interact,
     /// A waygate travel: `CMSG_CC_WAYGATE`'s body as Minecraft built it.
     Waygate(Vec<u8>),
+    /// Steve respawned after dying: `CMSG_CC_RESPAWN`'s body as Minecraft built it.
+    Respawn(Vec<u8>),
+    /// An ore vein mined with a Minecraft pickaxe: `CMSG_CC_HARVEST`'s body (the vein's guid).
+    Harvest(Vec<u8>),
     /// A choice in an NPC window shown in Minecraft.
     Dialog(benilla_app::external_dialog::DialogIn),
 }
@@ -298,6 +312,8 @@ fn write_actors(
         combat.put(o + 56, u.target.to_le_bytes());
         combat.put(o + 64, flags.to_le_bytes());
         combat.put(o + 68, u.unit_flags.to_le_bytes());
+        combat.put(o + 72, u.model_height.to_le_bytes());
+        combat.put(o + 76, u.model_width.to_le_bytes());
     }
     fence(Ordering::Release);
     combat.seq(seq.wrapping_add(1));
@@ -379,7 +395,8 @@ fn relay_damage(mut packets: MessageReader<CustomPacketIn>, mut combat: ResMut<C
     for p in packets.read() {
         let xp_drop = p.opcode == SMSG_CC_XP_DROP && p.body.len() >= 36;
         let kill = p.opcode == SMSG_CC_KILL && p.body.len() >= 52;
-        if !xp_drop && !kill && (p.opcode != SMSG_CC_DAMAGE || p.body.len() < 29) {
+        let harvest = p.opcode == SMSG_CC_HARVEST && p.body.len() >= 26;
+        if !xp_drop && !kill && !harvest && (p.opcode != SMSG_CC_DAMAGE || p.body.len() < 29) {
             continue;
         }
         let b = &p.body;
@@ -391,7 +408,20 @@ fn relay_damage(mut packets: MessageReader<CustomPacketIn>, mut combat: ResMut<C
         let head = unsafe { std::ptr::read_volatile(map.as_ptr().add(RING_HEAD).cast::<u64>()) };
         let o = RING_DATA + (head % RING_ENTRIES) as usize * RING_ENTRY;
         map[o..o + RING_ENTRY].fill(0);
-        if kill {
+        if harvest {
+            info!(
+                "classiccraft: vein {} harvested ({}) to Minecraft",
+                u32_at(8),
+                if b[24] != 0 { "ok" } else { "refused" }
+            );
+            // Entry: kind, u8 ok, u8 used up, u8 0, u32 entry, u64 vein, f32 x, y, z (WoW yards).
+            map[o] = RING_HARVEST;
+            map[o + 1] = b[24];
+            map[o + 2] = b[25];
+            map[o + 4..o + 8].copy_from_slice(&b[8..12]);
+            map[o + 8..o + 16].copy_from_slice(&b[0..8]);
+            map[o + 16..o + 28].copy_from_slice(&b[12..24]);
+        } else if kill {
             info!(
                 "classiccraft: kill of entry {} (level {}, {} copper) to Minecraft",
                 u32_at(8),
@@ -503,21 +533,30 @@ fn handle_inbox(
     mut crosshair_use: ResMut<benilla_app::external::CrosshairUse>,
     mut dialog: MessageWriter<benilla_app::external_dialog::DialogIn>,
 ) {
-    let msgs = std::mem::take(&mut inbox.0);
+    let mut msgs = std::mem::take(&mut inbox.0);
     if !(bridge.driving() && report.in_world) {
-        return;
+        // A respawn must reach the server (the character stays dead otherwise): kept until in world.
+        msgs.retain(|m| matches!(m, McMsg::Respawn(_)));
+        if !report.in_world {
+            inbox.0 = msgs;
+            return;
+        }
     }
     let ghost = units.self_dead || units.self_ghost;
     for m in msgs {
         // Ghost mode: no hits and no proxies, only the death/respawn events get through.
         // A ghost talks to the spirit healer too.
-        if ghost && !matches!(m, McMsg::Event(_) | McMsg::Chat(_) | McMsg::Interact | McMsg::Dialog(_)) {
+        if ghost && !matches!(m, McMsg::Event(_) | McMsg::Respawn(_) | McMsg::Chat(_) | McMsg::Interact | McMsg::Dialog(_)) {
             continue;
         }
         match m {
             McMsg::Interact => crosshair_use.pending = true,
             McMsg::Dialog(d) => {
                 dialog.write(d);
+            }
+            McMsg::Harvest(body) => {
+                info!("classiccraft: ore vein mined in Minecraft, to the server");
+                send(&mut out, CMSG_CC_HARVEST, body);
             }
             McMsg::Waygate(body) => {
                 info!("classiccraft: waygate travel to the server");
@@ -552,11 +591,12 @@ fn handle_inbox(
                 info!("classiccraft: Steve died: the WoW character dies too");
                 send(&mut out, CMSG_CC_DIED, Vec::new());
             }
-            McMsg::Event(2) => {
-                if units.self_dead && !units.self_ghost {
-                    info!("classiccraft: Steve respawned: releasing the spirit");
-                    send(&mut out, CMSG_REPOP_REQUEST, Vec::new());
-                }
+            McMsg::Respawn(body) => {
+                info!(
+                    "classiccraft: Steve respawned: the WoW character comes back {}",
+                    if body[0] == 1 { "at his bed" } else { "at its hearthstone location" }
+                );
+                send(&mut out, CMSG_CC_RESPAWN, body);
             }
             McMsg::Event(_) => {}
             McMsg::XpClaim { drop, xp } => {

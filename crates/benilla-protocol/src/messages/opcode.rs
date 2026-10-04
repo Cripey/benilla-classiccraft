@@ -389,6 +389,9 @@ pub const CMSG_CC_XP_CLAIM: u16 = 0x0342; // 834
 pub const CMSG_CC_WAYGATE: u16 = 0x0343; // 835: travel through a Minecraft waygate
 pub const CMSG_CC_MINE: u16 = 0x0344; // 836: Steve went down a Minecraft mine (1) or came back (0)
 pub const SMSG_CC_KILL: u16 = 0x0345; // 837: a creature we killed, for Minecraft's loot
+pub const CMSG_CC_RESPAWN: u16 = 0x0346; // 838: Steve respawned: resurrect at his bed or the hearthstone location
+pub const CMSG_CC_HARVEST: u16 = 0x0347; // 839: an ore vein mined with a Minecraft pickaxe
+pub const SMSG_CC_HARVEST: u16 = 0x0348; // 840: ... done (or not): Minecraft drops the ore
 
 /// `/played`: an empty request; the reply is `u32 total`, `u32 level` seconds (`Misc.cpp:278-282`).
 pub const CMSG_PLAYED_TIME: u16 = 0x01CC; // 460

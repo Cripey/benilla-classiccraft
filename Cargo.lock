@@ -2434,9 +2434,11 @@ dependencies = [
  "benilla-assets",
  "benilla-buildstamp",
  "benilla-formats",
+ "benilla-m2",
  "benilla-ui",
  "benilla-world",
  "bevy",
+ "image",
  "memmap2",
 ]
 

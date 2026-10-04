@@ -74,6 +74,11 @@ const REN_WAYGATE: u32 = 18;
 /// A choice in an NPC window (2026-10-03): u64 npc, u8 kind, u8 action, u16 0, u32 arg
 /// (`benilla_app::external_dialog::DialogIn`).
 const REN_DIALOG: u32 = 19;
+/// Steve respawned after a death in a WoW map (2026-10-04): u32 kind (0 = at the hearthstone
+/// location, 1 = at the given spot: his bed), u32 map, f32 x, y, z, o (WoW) - `CMSG_CC_RESPAWN`'s body.
+const REN_RESPAWN: u32 = 20;
+/// An ore vein mined with a Minecraft pickaxe (2026-10-04): u64 the vein's guid - `CMSG_CC_HARVEST`'s body.
+const REN_HARVEST: u32 = 21;
 /// A light-level-15 block's reach (yd): Minecraft light fades over 15 blocks.
 const MC_LIGHT_RANGE: f32 = 15.0 * S;
 
@@ -663,6 +668,8 @@ fn parse(kind: u32, p: &Rd) -> Option<Msg> {
         REN_EVENT if len >= 4 => Some(Msg::Combat(crate::combat::McMsg::Event(p.u32(0)))),
         REN_INTERACT => Some(Msg::Combat(crate::combat::McMsg::Interact)),
         REN_WAYGATE if len >= 28 => Some(Msg::Combat(crate::combat::McMsg::Waygate(p.0[..28].to_vec()))),
+        REN_RESPAWN if len >= 24 => Some(Msg::Combat(crate::combat::McMsg::Respawn(p.0[..24].to_vec()))),
+        REN_HARVEST if len >= 8 => Some(Msg::Combat(crate::combat::McMsg::Harvest(p.0[..8].to_vec()))),
         REN_DIALOG if len >= 16 => Some(Msg::Combat(crate::combat::McMsg::Dialog(
             benilla_app::external_dialog::DialogIn {
                 npc: u64::from_le_bytes(p.0[0..8].try_into().unwrap()),
