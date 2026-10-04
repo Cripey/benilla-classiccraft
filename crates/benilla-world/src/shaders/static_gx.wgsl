@@ -76,11 +76,16 @@ fn wow_normalize(v: vec3<f32>) -> vec3<f32> {
     return select(vec3<f32>(0.0), normalize(v), l2 > 1e-12);
 }
 
-fn point_light_sum(P: vec3<f32>, N: vec3<f32>, anchor: vec3<f32>) -> vec3<f32> {
+// classiccraft (fork only): `external_only` takes just the lights flagged `w = 1` on their colour row
+// (Minecraft torches), for the surfaces the reference's point lights never reach.
+fn point_light_sum(P: vec3<f32>, N: vec3<f32>, anchor: vec3<f32>, external_only: bool) -> vec3<f32> {
     let count = u32(wow_light.point_count.x);
     var sel = array<u32, 3>(0u, 0u, 0u);
     var sd = array<f32, 3>(1e30, 1e30, 1e30);
     for (var i = 0u; i < count; i = i + 1u) {
+        if (external_only && wow_light.points[2u * i + 1u].w < 0.5) {
+            continue;
+        }
         let pos_range = wow_light.points[2u * i];
         let dv = pos_range.xyz - anchor;
         let d2 = dot(dv, dv);
@@ -170,9 +175,10 @@ fn vertex(v: GxVertex) -> GxVsOut {
     // Up to 3 nearest point lights, chosen from the placement origin. WMO surfaces take none,
     // as in the reference; interior props neither: the probe holds their group's MOLR lights.
     if ((v.word & (WORD_WMO | WORD_INTERIOR)) != 0u) {
-        out.point_lit = vec3<f32>(0.0);
+        // classiccraft: only external lights, chosen per vertex (a WMO surface spans a building).
+        out.point_lit = point_light_sum(world, v.normal, world, true);
     } else {
-        out.point_lit = point_light_sum(world, v.normal, v.anchor);
+        out.point_lit = point_light_sum(world, v.normal, v.anchor, false);
     }
     return out;
 }
@@ -290,8 +296,9 @@ fn fragment(in: GxVsOut) -> @location(0) vec4<f32> {
         if (interior && class_int && has_vc) {
             // INT self-illumination, the reference's interior pixel shader (literal 4.0):
             // tex·MOCV·(1 + 4·MOCV.a), clamped once. A colour-less INT batch keeps tex × lit.
+            // classiccraft: plus external point light (zero for every 1.12 light).
             rgb = clamp(
-                tex_rgb * vc.rgb * (1.0 + 4.0 * trans_a),
+                tex_rgb * (vc.rgb * (1.0 + 4.0 * trans_a) + in.point_lit),
                 vec3<f32>(0.0),
                 vec3<f32>(1.0),
             );

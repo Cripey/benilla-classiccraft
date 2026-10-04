@@ -2425,6 +2425,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
+name = "classiccraft"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "avian3d",
+ "benilla-app",
+ "benilla-assets",
+ "benilla-buildstamp",
+ "benilla-formats",
+ "benilla-ui",
+ "benilla-world",
+ "bevy",
+ "memmap2",
+]
+
+[[package]]
 name = "clipboard-win"
 version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

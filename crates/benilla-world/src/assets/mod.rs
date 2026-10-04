@@ -51,6 +51,8 @@ fn open_world_assets(mut commands: Commands, device: Res<RenderDevice>) {
     let shared_light = crate::lighting::new_shared_light_buffer(&device);
     let light_buf = shared_light.0.clone();
     commands.insert_resource(shared_light);
+    // classiccraft: the terrain hole buffer every terrain material binds (fork only).
+    commands.insert_resource(crate::terrain_holes::new_terrain_hole_buffer(&device));
     let Some(data) = benilla_formats::wow_data() else {
         warn!(
             "no WoW install found — looked in {:?}; starting with no world",

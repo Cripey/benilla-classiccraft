@@ -66,6 +66,27 @@ impl super::UiScript {
     pub fn take_gossip_quest_selects(&mut self) -> Vec<u32> {
         std::mem::take(&mut self.model_mut().gossip_quest_selects)
     }
+
+    // classiccraft: Minecraft's own gossip screen reads the menu and queues the same intents.
+    /// The open gossip menu, as the Lua getters read it.
+    pub fn gossip(&self) -> Option<GossipMenu> {
+        self.model_ref().gossip.clone()
+    }
+
+    /// Queue `SelectGossipOption(position)` (1-based).
+    pub fn push_gossip_select(&mut self, position: u32) {
+        self.model_mut().gossip_selects.push(position);
+    }
+
+    /// Queue a 1-based whole-menu quest row, as `SelectGossipAvailableQuest` / `...ActiveQuest` do.
+    pub fn push_gossip_quest_select(&mut self, position: u32) {
+        self.model_mut().gossip_quest_selects.push(position);
+    }
+
+    /// Queue `CloseGossip()`.
+    pub fn push_gossip_close(&mut self) {
+        self.model_mut().gossip_close = true;
+    }
 }
 
 /// Register the gossip globals.

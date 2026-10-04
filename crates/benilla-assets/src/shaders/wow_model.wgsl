@@ -146,11 +146,18 @@ fn wow_normalize(v: vec3<f32>) -> vec3<f32> {
 // receiving unit's own position `anchor` (`0x71bf90` gathers by squared distance, `0x71c730` seats
 // slots 1-3). Range bounds candidacy only; a selected light falls off as `1/(0.7·d + 0.03·d²)`,
 // diffuse only, on the submitted normal (no GL_LIGHT_MODEL_TWO_SIDE). Mirrored in terrain.wgsl.
-fn point_light_sum(P: vec3<f32>, N: vec3<f32>, anchor: vec3<f32>) -> vec3<f32> {
+// classiccraft (fork only): `mode` 0 takes every light, 1 only the lights flagged `w = 1` on their
+// colour row (Minecraft torches, for the surfaces the reference's point lights never reach), 2 all
+// but those (Minecraft meshes, whose block light already carries them).
+fn point_light_sum(P: vec3<f32>, N: vec3<f32>, anchor: vec3<f32>, mode: u32) -> vec3<f32> {
     let count = u32(wow_light.point_count.x);
     var sel = array<u32, 3>(0u, 0u, 0u);
     var sd = array<f32, 3>(1e30, 1e30, 1e30);
     for (var i = 0u; i < count; i = i + 1u) {
+        let is_ext = wow_light.points[2u * i + 1u].w > 0.5;
+        if ((mode == 1u && !is_ext) || (mode == 2u && is_ext)) {
+            continue;
+        }
         let pos_range = wow_light.points[2u * i];
         let dv = pos_range.xyz - anchor;
         let d2 = dot(dv, dv);
@@ -405,13 +412,22 @@ fn vertex(vertex: WowVertex) -> WowVsOut {
     // Point lights: none on WMO surfaces, none here on interior M2 props (their group's MOLR lights
     // are in the SH probe), else the ≤3 nearest to the instance origin (clutter: its MCNK chunk).
     if (m.model_flags.x > 0.5 || m.model_flags.z > 0.5) {
-        out.point_lit = vec3<f32>(0.0);
+        // classiccraft: only external lights, chosen per vertex (a WMO surface spans a building).
+        out.point_lit = point_light_sum(out.world_position.xyz, out.world_normal, out.world_position.xyz, 1u);
     } else {
         var anchor = mesh_world_from_local[3].xyz;
         if (m.clutter_fade.w > 0.5) {
             anchor = mcnk_cell_anchor(out.world_position.xyz);
         }
-        out.point_lit = point_light_sum(out.world_position.xyz, out.world_normal, anchor);
+        // classiccraft (fork only), `clutter_fade.z` bit 14, a Minecraft mesh: each vertex takes its
+        // own nearest lights (a section spans 16³ blocks), and not Minecraft's own torches, which
+        // its block light (`uv_b.x`) already carries.
+        var mode = 0u;
+        if ((u32(m.clutter_fade.z) & 16384u) != 0u) {
+            anchor = out.world_position.xyz;
+            mode = 2u;
+        }
+        out.point_lit = point_light_sum(out.world_position.xyz, out.world_normal, anchor, mode);
     }
     return out;
 }
@@ -560,6 +576,12 @@ fn fragment(in: WowVsOut, @builtin(front_facing) is_front: bool) -> WowFragOut {
     // so the cutoff stays tex.a < 224/255 on the unfaded alpha. Only for a source batch that
     // alpha-tests (bit 10): ALPHAREF keys on the stored blend mode.
     if ((u32(m.clutter_fade.z) & 1024u) != 0u && base_color.a < VANILLA_ALPHA_KEY) {
+        discard;
+    }
+    // classiccraft (fork only), bit 14, a Minecraft mesh: no fully clear pixel writes depth, so a
+    // blended one (an XP orb's square, a translucent skin) hides nothing behind its clear parts
+    // while its visible parts keep depth (a player's head drew behind the body without it).
+    if ((u32(m.clutter_fade.z) & 16384u) != 0u && base_color.a < 0.01) {
         discard;
     }
     // The depth-prime twin (`M2UseZFill`) masks colour writes, so only the discards above shape its
@@ -716,8 +738,9 @@ fn fragment(in: WowVsOut, @builtin(front_facing) is_front: bool) -> WowFragOut {
         if (is_interior && m.tint.w > 0.5 && m.tint.w < 1.5) {
             // INT: the reference's interior pixel shader, `tex·MOCV.rgb·(1 + 4·MOCV.a)` with only
             // the framebuffer's final clamp.
+            // classiccraft: plus external point light (zero for every 1.12 light).
             lit_rgb = clamp(
-                tex_rgb * m.tint.rgb * vc * (1.0 + 4.0 * trans_a),
+                tex_rgb * m.tint.rgb * (vc * (1.0 + 4.0 * trans_a) + point_diffuse),
                 vec3<f32>(0.0),
                 vec3<f32>(1.0),
             );
@@ -725,8 +748,21 @@ fn fragment(in: WowVsOut, @builtin(front_facing) is_front: bool) -> WowFragOut {
     } else {
         // An M2: the body tint multiplies the light terms as MOCV does above. A WMO surface has
         // no tint slot, so the WMO branch leaves it out.
+        var mc_block = vec3<f32>(0.0);
+        var mc_sky = 1.0;
+#ifdef VERTEX_UVS_B
+        // classiccraft (fork only): a Minecraft mesh's block light (`uv_b.x`, already on Minecraft's
+        // brightness curve) in Minecraft's lightmap colour, the warm torch tint; its sky light
+        // (`uv_b.y`) scales the sun, the ambient and WoW's own point lights (a lamp on a building
+        // shines through no rock into a cave below), so a torch alone lights a dark cave.
+        if ((u32(m.clutter_fade.z) & 16384u) != 0u) {
+            let f = in.uv_b.x;
+            mc_block = vec3<f32>(f, f * ((f * 0.6 + 0.4) * 0.6 + 0.4), f * (f * f * 0.6 + 0.4));
+            mc_sky = in.uv_b.y;
+        }
+#endif
         let primary = clamp(
-            inst_tint * (lit + point_diffuse) + sidn_e + highlight,
+            inst_tint * (lit + point_diffuse) * mc_sky + sidn_e + highlight + mc_block,
             vec3<f32>(0.0),
             vec3<f32>(1.0),
         );

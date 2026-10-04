@@ -330,7 +330,9 @@ impl WaterChunkInfo {
 
     /// The surface height (WoW Z) at a WoW-space XY, `None` where dry: the one wet-or-dry question,
     /// answered by the containing cell's bilinear, never by the grid's highest vertex.
-    pub(crate) fn surface_z_at(&self, x: f32, y: f32) -> Option<f32> {
+    // classiccraft: `pub` (was `pub(crate)`) - the terrain export samples MCLQ surfaces per
+    // Minecraft block column for the water fill (fork only).
+    pub fn surface_z_at(&self, x: f32, y: f32) -> Option<f32> {
         if !self.contains(x, y) {
             return None; // the bounding box is the cheap reject
         }

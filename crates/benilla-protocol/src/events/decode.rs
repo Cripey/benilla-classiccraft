@@ -1085,6 +1085,9 @@ pub fn decode(packet: ServerPacket) -> Vec<SessionEvent> {
             states: vec![(id, value)],
         }],
         // No parse arm at all: surfaced for the app's dropped-opcode tally.
+        ServerPacket::ClassicCraft { opcode, body } => {
+            vec![SessionEvent::ClassicCraft { opcode, body }]
+        }
         ServerPacket::Other { opcode } => vec![SessionEvent::PacketDropped {
             opcode,
             unparseable: false,

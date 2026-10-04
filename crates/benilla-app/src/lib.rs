@@ -76,6 +76,9 @@ mod pending_item_ops;
 mod perf;
 mod pipe_warm;
 mod player;
+/// classiccraft: the external-driver hook a crate on top drives the body through (fork only).
+pub use player::external;
+pub use player::external_dialog; // classiccraft
 mod poi_marker;
 mod portrait;
 #[cfg(feature = "dev")]
@@ -318,6 +321,9 @@ fn launch(build: BuildId, extend: Option<Extension<'_>>) -> AppExit {
 
     app.add_plugins(benilla_world::boot::tuned_default_plugins(Window {
         title: "benilla".into(),
+        // classiccraft (fork only): a fixed Wayland app id / X11 class, so a window manager rule
+        // can place the window (KWin: open it on the user's main monitor).
+        name: Some("benilla".into()),
         // Born in the player's display mode (`gxWindow` read straight off `config.toml`) rather
         // than flipped into it at `Startup`, which would flash on every launch and, under
         // gamescope, spend the first second in the input state fullscreen is meant to end.

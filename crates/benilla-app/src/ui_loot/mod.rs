@@ -719,7 +719,9 @@ fn feed_loot(
             // Auto-loot (`LootConfig`), inverted by a held Shift: every row gets a hand pick's
             // sends, and emptying the window auto-releases it.
             let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-            if cfg.auto_loot != shift {
+            // classiccraft: from Minecraft mode WoW's loot window can't be used: always auto-loot
+            // (a quest object's items into the WoW bags), then the window releases itself.
+            if cfg.auto_loot != shift || crate::player::external::crosshair() {
                 let mut bind_confirm_fired = false;
                 for index in 1..=snap.rows.len() as u32 {
                     match loot.action_at(index) {

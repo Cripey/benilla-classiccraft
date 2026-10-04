@@ -136,6 +136,8 @@ pub mod model_fade;
 pub mod model_forms;
 pub mod model_render;
 pub mod modkeys;
+// classiccraft (fork only): the object under the feet, for footsteps.
+pub mod object_surface;
 pub mod particles;
 pub mod ribbons;
 pub mod ride_frame;
@@ -152,6 +154,7 @@ pub mod static_merge;
 pub mod straddle;
 pub mod sun;
 pub mod surface;
+pub mod terrain_holes;
 pub mod terrain_stream;
 pub mod thread_qos;
 pub mod view;

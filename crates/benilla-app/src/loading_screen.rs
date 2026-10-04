@@ -136,6 +136,10 @@ pub(crate) struct LoadingScreen {
     /// residency cannot clear a screen raised for the new one (at world entry the login vista is
     /// resident well before `SMSG_LOGIN_VERIFY_WORLD`).
     awaiting_snap: bool,
+    /// classiccraft (fork only): raised only because the ground under a body that stayed put on
+    /// its map was not resident yet (the backstop), no entry, worldport or teleport: an external
+    /// driver owning the body keeps it through such a cover ([`Self::streaming_only`]).
+    streaming_only: bool,
     /// The map this screen's art resolves from, the reference's `[0x82f00c]`, set by every raise;
     /// `None` is its `-1`, no backdrop. Not `CurrentMap`: vmangos can relocate a character inside
     /// `Player::LoadFromDB` (`Player.cpp:15020`), under a live screen. Its writers: `0x4067e6` and
@@ -172,6 +176,12 @@ impl LoadingScreen {
         self.active
     }
 
+    /// classiccraft: up only while terrain streams in under a body that went nowhere (an elytra
+    /// flight outran the streamer, 2026-10-02): no reason to take the body from an external driver.
+    pub(crate) fn streaming_only(&self) -> bool {
+        self.active && self.streaming_only
+    }
+
     /// An active cover, for tests.
     #[cfg(test)]
     pub(crate) fn test_covering() -> Self {
@@ -203,6 +213,7 @@ impl LoadingScreen {
     fn raise(&mut self, reason: &str, awaiting_snap: bool, map: Option<u32>, now: f32) {
         self.active = true;
         self.blackout = false;
+        self.streaming_only = false;
         self.awaiting_snap = awaiting_snap;
         self.map = map;
         self.ready_frames = 0;
@@ -223,6 +234,8 @@ impl LoadingScreen {
             }
         }
         self.awaiting_snap = false;
+        // classiccraft: a snap is a real move (a teleport or worldport adopting this cover).
+        self.streaming_only = false;
     }
 
     /// A far snap: a screen already up is this snap's own, so the snap only ends its wait. Returns
@@ -497,6 +510,7 @@ fn drive_loading_screen(
     if logouts.read().next().is_some() || session_over || refused {
         screen.active = true;
         screen.blackout = true;
+        screen.streaming_only = false;
         screen.awaiting_snap = false;
         screen.ready_frames = 0;
         info!(
@@ -525,6 +539,7 @@ fn drive_loading_screen(
     {
         // Same map by construction: the ground under the body.
         screen.raise("focus not resident", false, map_id, now);
+        screen.streaming_only = true;
     }
 
     // --- At a snap, the same test against the clear's own predicate: a teleport inside the keep

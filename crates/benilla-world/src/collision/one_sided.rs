@@ -469,8 +469,8 @@ pub struct FaceProbe {
     pub entity: Entity,
     /// World-space normal at the authored winding, the vector the gate tests.
     pub normal: Vec3,
-    /// World-space vertices.
-    pub(crate) verts: [Vec3; 3],
+    /// World-space vertices. `pub` for classiccraft's geometry export (fork only).
+    pub verts: [Vec3; 3],
 }
 
 impl FaceProbe {

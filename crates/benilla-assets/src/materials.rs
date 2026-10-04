@@ -413,6 +413,11 @@ pub struct TerrainExtension {
     /// The shared global light, rows 0-5 (light, fog, farclip).
     #[storage(90, read_only, buffer)]
     pub light_buf: Buffer,
+
+    /// classiccraft (fork only): open Minecraft block columns, whose terrain pixels are discarded
+    /// (`benilla_world::terrain_holes`).
+    #[storage(120, read_only, buffer)]
+    pub hole_buf: Buffer,
 }
 
 impl MaterialExtension for TerrainExtension {

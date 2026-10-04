@@ -39,7 +39,8 @@ pub(super) fn update_pick_occlusion(
     let (Ok((camera, cam_tf)), Ok(window)) = (camera.single(), window.single()) else {
         return;
     };
-    let Some(cursor) = window.cursor_position() else {
+    // classiccraft: the external driver's crosshair, the screen centre, in crosshair mode.
+    let Some(cursor) = crate::player::external::pick_point(window) else {
         return;
     };
     let Ok(ray) = camera.viewport_to_world(cam_tf, cursor) else {
@@ -238,7 +239,9 @@ pub(super) fn update_hover(
     // A plate under the pointer is the mouseover, read before the UI gate below, which the plate
     // itself trips: the reference's plate OnEnter (`0x7cb850`) publishes `[0xb4e2c8]` ungraded,
     // with no world pick behind it. Freelook wins, as the plates hand the mouse back (`0x60f830`).
-    if !rig.is_looking() {
+    // classiccraft: in crosshair mode the pick is the screen centre's, mouse-look or not.
+    let crosshair = crate::player::external::crosshair();
+    if !rig.is_looking() && !crosshair {
         if let Some(entity) = plate_hover.0 {
             hovered.target = Some(entity);
             hovered.guid = units.get(entity).ok().map(|(g, _)| g.0);
@@ -247,14 +250,14 @@ pub(super) fn update_hover(
             return;
         }
     }
-    if rig.is_looking() || pointer_over_ui.0 {
+    if (rig.is_looking() || pointer_over_ui.0) && !crosshair {
         *last_pick = None;
         return;
     }
     let (Ok((camera, cam_tf)), Ok(window)) = (camera.single(), window.single()) else {
         return;
     };
-    let Some(cursor) = window.cursor_position() else {
+    let Some(cursor) = crate::player::external::pick_point(window) else {
         return;
     };
     let Ok(ray) = camera.viewport_to_world(cam_tf, cursor) else {
@@ -583,7 +586,9 @@ pub(super) fn update_hovered_object(
     hovered.guid = None;
     hovered.distance = f32::MAX;
     // The sticky pick drops the moment the pointer is not ours.
-    let yielded = rig.is_looking() || pointer_over_ui.0;
+    // classiccraft: in crosshair mode the pick is the screen centre's, mouse-look or not.
+    let crosshair = crate::player::external::crosshair();
+    let yielded = (rig.is_looking() || pointer_over_ui.0) && !crosshair;
     if yielded {
         *last_pick = None;
     }
@@ -602,7 +607,12 @@ pub(super) fn update_hovered_object(
     if yielded {
         return;
     }
-    let Some(cursor) = window.cursor_position().or(probe_aim) else {
+    let cursor = if crosshair {
+        crate::player::external::pick_point(window)
+    } else {
+        window.cursor_position().or(probe_aim)
+    };
+    let Some(cursor) = cursor else {
         return;
     };
     if pickable.is_empty() {

@@ -126,6 +126,11 @@ impl super::UiScript {
     }
 
     /// Whether `CloseMerchant` was called since the last drain; the close sends no packet.
+    /// classiccraft: queue `CloseMerchant()` (Minecraft's own trade screen closed).
+    pub fn push_merchant_close(&mut self) {
+        self.model_mut().merchant_close = true;
+    }
+
     pub fn take_merchant_close(&mut self) -> bool {
         std::mem::take(&mut self.model_mut().merchant_close)
     }

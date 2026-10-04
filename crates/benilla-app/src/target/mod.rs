@@ -15,6 +15,8 @@ use benilla_world::interact::{WorldClick, WorldRightClick};
 use benilla_world::schedule::WorldStage;
 
 mod by_name;
+// classiccraft (fork only): the external driver's crosshair as the cursor.
+mod crosshair;
 // `pub(crate)` for the chest live probe, which drives the mouse's own `click::resolve_go_action`.
 pub(crate) mod click;
 // `pub(crate)` for the hover inspector, which runs the cursor's `cursor_mode::go_highlightable`.
@@ -311,7 +313,8 @@ impl Plugin for TargetPlugin {
                     (latch_press_pick, hover::update_pick_occlusion).chain(),
                     hover::update_hover,
                     hover::update_hovered_object,
-                    cursor_mode::classify_cursor,
+                    // classiccraft: the crosshair's target and right-click, on this frame's cursor.
+                    (cursor_mode::classify_cursor, crosshair::crosshair_target_and_click).chain(),
                     // The right press's two legs of the reference's OnMouseDown hook (`0x492c20`),
                     // the targeting cancel and the repair-mode reset, before the cursor drive, so
                     // the press frame already reads both modes cleared.

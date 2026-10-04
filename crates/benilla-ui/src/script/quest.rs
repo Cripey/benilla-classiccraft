@@ -147,6 +147,23 @@ impl super::UiScript {
     pub fn take_quest_actions(&mut self) -> Vec<QuestAction> {
         std::mem::take(&mut self.model_mut().quest_actions)
     }
+
+    // classiccraft: Minecraft's own questgiver screen reads the open panel and queues the same
+    // selects and button intents the Lua panels do.
+    /// The open questgiver panel snapshot, as the Lua getters read it.
+    pub fn quest(&self) -> Option<QuestState> {
+        self.model_ref().quest.clone()
+    }
+
+    /// Queue a greeting-row select, as `SelectActiveQuest` / `SelectAvailableQuest` do.
+    pub fn push_quest_select(&mut self, select: QuestSelect) {
+        self.model_mut().quest_selects.push(select);
+    }
+
+    /// Queue a button intent, as the panel verbs do.
+    pub fn push_quest_action(&mut self, action: QuestAction) {
+        self.model_mut().quest_actions.push(action);
+    }
 }
 
 /// `GetRewardSpell`'s three returns: `texture, name, isTradeskillSpell`, the third 1 or nil.

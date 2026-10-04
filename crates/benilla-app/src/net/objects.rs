@@ -614,6 +614,9 @@ fn object_create(
             entity.insert(s);
         }
         // The seed is not merged: the reference does not notify on create.
+        let mut fields = fields;
+        // classiccraft: the bridge's stand-ins arrive unselectable (fork only).
+        crate::player::external::mask_unselectable(guid, &mut fields);
         entity.insert(ObjectStore(fields));
         index.0.insert(guid, entity.id());
     }

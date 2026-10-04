@@ -292,11 +292,13 @@ impl FieldEdges {
 /// test harness share it.
 pub(crate) fn merge_store_fields(
     store: &mut ObjectFields,
-    delta: ObjectFields,
+    mut delta: ObjectFields,
     entity: Entity,
     guid: u64,
     mut emit: impl FnMut(FieldChanged),
 ) {
+    // classiccraft: the bridge's stand-ins arrive unselectable (fork only).
+    crate::player::external::mask_unselectable(guid, &mut delta);
     let Some(kind) = store.created_as() else {
         // A bare delta with no create: nothing for the reference to notify on; the fields land.
         store.merge(delta);
@@ -1056,6 +1058,11 @@ pub(crate) enum ClientCommand {
     },
     /// `CMSG_MOUNTSPECIAL_ANIM`: we play MountSpecial (94) locally and ignore our own echo.
     MountSpecial,
+    /// classiccraft (fork only): a custom-opcode packet built by the classiccraft crate.
+    ClassicCraft {
+        opcode: u16,
+        body: Vec<u8>,
+    },
     /// `CMSG_GOSSIP_HELLO`: works on any interactable creature (the server's interact check is
     /// passed `UNIT_NPC_FLAG_NONE`, `NPCHandler.cpp:347`).
     GossipHello {

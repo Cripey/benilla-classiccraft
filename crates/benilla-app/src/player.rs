@@ -41,6 +41,9 @@ mod camera_water;
 pub(crate) mod camera_view;
 mod drunk;
 mod embody;
+// classiccraft: the Minecraft bridge's hook into the controller (fork only).
+pub mod external;
+pub mod external_dialog; // classiccraft: NPC windows for the external driver
 mod flags;
 mod follow;
 
@@ -210,6 +213,7 @@ pub(crate) struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         net::register(app);
+        external::plugin(app);
         follow::plugin(app);
         approach::plugin(app);
         camera_saved::plugin(app);

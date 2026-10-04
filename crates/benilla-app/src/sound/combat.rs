@@ -288,7 +288,12 @@ fn combat_sounds(
     mut out: NonSendMut<SoundOutput>,
     config: Res<SoundConfig>,
     listener: Res<AudioListener>,
+    drive: Option<Res<crate::external::ExternalDrive>>,
 ) {
+    // classiccraft (fork only): while Minecraft drives the player, Minecraft plays the player's
+    // own swing and hurt sounds; WoW's exertion, whoosh and injury vocal for the player are muted.
+    // Creatures keep all of theirs (user, 2026-10-02).
+    let mc_self = drive.as_ref().is_some_and(|d| d.pose.is_some() || d.drove);
     // Exertion fires from the packet, at swing start (`0x6246a0` → `0x624786`).
     let mut exertions: Vec<(Entity, bool)> = Vec::new();
     for s in swings.read() {
@@ -349,9 +354,12 @@ fn combat_sounds(
     // `force = 0` (`0x62477e`), so the class roll applies: class 0 is 70 for a creature and 35
     // for a player, class 1 (a crit) 100.
     for (attacker, crit) in exertions {
-        let Ok((tr, _, net, _, _)) = units.get(attacker) else {
+        let Ok((tr, _, net, is_you, _)) = units.get(attacker) else {
             continue;
         };
+        if mc_self && is_you {
+            continue; // classiccraft: Minecraft's own attack sound plays instead
+        }
         // The `AISOUNDDESC` gate on the attacker: exertion is classes 0/1.
         if net.kind != EntityKind::Player && object_sound_playing(&out, attacker) {
             continue;
@@ -392,9 +400,12 @@ fn combat_sounds(
         let Some(swing) = last.0.get(&ev.entity) else {
             continue; // an attack anim without a tracked swing (e.g. spawned mid-fight)
         };
-        let Ok((attacker_tr, wielded, _, _, _)) = units.get(ev.entity) else {
+        let Ok((attacker_tr, wielded, _, is_you, _)) = units.get(ev.entity) else {
             continue;
         };
+        if mc_self && is_you {
+            continue; // classiccraft: Minecraft's own swing sound plays instead
+        }
         let offhand = swing.hit_info & HITINFO_LEFTSWING != 0;
         if whiffed(swing.victim_state) {
             let (subclass, _) = swing_weapon(wielded, offhand, mats);
@@ -467,7 +478,10 @@ fn combat_sounds(
             continue;
         };
         let crit = swing.hit_info & HITINFO_CRITICAL != 0;
-        if !no_contact(swing) {
+        // classiccraft: the player's hits are Minecraft's weapons, which make their own sound: no
+        // WoW weapon impact or clang for them; the victim's wound vocal below still plays.
+        let your_swing = mc_self && attacker.is_some_and(|(_, _, _, is_you, _)| is_you);
+        if !no_contact(swing) && !your_swing {
             // The attacker's weapon row (`0x625460`); `None` for a wand or thrown weapon.
             let offhand = swing.hit_info & HITINFO_LEFTSWING != 0;
             let (subclass, metal) = swing_weapon(attacker.and_then(|(_, w, ..)| w), offhand, mats);
@@ -604,6 +618,8 @@ fn combat_sounds(
                     || net.kind == EntityKind::Player
                     || !swing.victim.is_some_and(|v| object_sound_playing(&out, v))
             });
+            // classiccraft: Minecraft plays Steve's hurt sound; WoW's player wound vocal is muted.
+            let vocal_victim = vocal_victim.filter(|(_, _, _, victim_is_you, _)| !(mc_self && *victim_is_you));
             if let Some((victim_tr, _, net, victim_is_you, _)) = vocal_victim {
                 // The class roll, keyed on the victim's type (`[vt+0x88]`): class 2 is 60 for a
                 // creature and 30 for a player; classes 3 and 9 are 100.

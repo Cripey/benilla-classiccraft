@@ -81,6 +81,11 @@ impl WorldWriter {
         sent
     }
 
+    /// classiccraft (fork only): one custom-opcode packet, body built by the classiccraft crate.
+    pub fn send_classiccraft(&mut self, opcode: u16, body: &[u8]) -> Result<()> {
+        self.send(opcode, body)
+    }
+
     /// Start recording what reaches the socket; a second call keeps what is not yet drained.
     pub fn watch_sends(&mut self) {
         self.sent.get_or_insert_with(Vec::new);

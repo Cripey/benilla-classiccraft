@@ -61,7 +61,11 @@ impl Plugin for TransportPlugin {
                 )
                     .chain()
                     .after(benilla_world::schedule::WorldStage::Net)
-                    .before(benilla_world::schedule::WorldStage::Input),
+                    .before(benilla_world::schedule::WorldStage::Input)
+                    // classiccraft: the external driver's deck-relative pose is composed with this
+                    // frame's deck, never last frame's (unordered, the view jittered on a moving
+                    // tram, 2026-10-02).
+                    .before(crate::external::ExternalDriveSet::Supply),
             )
             // The ride frame last, after `PlayerControlSet` decides what we stand on; its
             // consumers, the particle and ribbon sims, run in `PostUpdate`.
@@ -307,6 +311,8 @@ fn arm_transports(
                 },
                 // Kinematic for the same reason as the boats below.
                 RigidBody::Kinematic,
+                // classiccraft: its deck goes to Minecraft as a moving platform.
+                crate::external::DeckTransport { guid: guid.0 },
             ));
             continue;
         }
@@ -349,6 +355,8 @@ fn arm_transports(
                     was_moving: false,
                 },
                 RigidBody::Kinematic,
+                // classiccraft: its deck goes to Minecraft as a moving platform.
+                crate::external::DeckTransport { guid: guid.0 },
             ));
         }
     }

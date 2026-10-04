@@ -138,6 +138,11 @@ impl WorldPoint<'_, '_> {
         self.surface.terrain_type(catalog, self.unit_room(who), pos)
     }
 
+    /// classiccraft (fork only): the texture path of the building floor under a subject.
+    pub fn floor_texture(&self, who: Subject, pos: Vec3) -> Option<String> {
+        self.surface.floor_texture(self.unit_room(who), pos)
+    }
+
     /// Which WMO group a subject stands in; `None` in the open world.
     pub fn room_group(&self, who: Subject) -> Option<u16> {
         self.unit_room(who)

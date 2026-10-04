@@ -80,13 +80,16 @@ pub(super) fn control(
         Local<Option<camera::PressGesture>>,
     ),
     // The liquid query, the transports, and the parent chain from a deck collider to its transport.
-    world_q: (
+    mut world_q: (
         benilla_world::world_point::WorldPoint,
         TransportQuery,
         Query<&ChildOf>,
+        // classiccraft: the external driver's pose (fork only, [`super::external`]).
+        ResMut<super::external::ExternalDrive>,
     ),
 ) {
     let (world, transports, child_of) = (&world_q.0, &world_q.1, &world_q.2);
+    let ext_drive = &mut *world_q.3;
     let (left_click, right_click) = (&mut *click_test.0, &mut *click_test.1);
     let Ok((mut cam_t, mut cam)) = cameras.single_mut() else {
         return;
@@ -300,7 +303,13 @@ pub(super) fn control(
     let flat = |v: Vec3| Vec3::new(v.x, 0.0, v.z).normalize_or_zero();
 
     // On a transport, recompose the rider from the deck's pose this frame, before input integrates.
+    let before_carry = player.pos;
     ride::carry(&mut player, &mut cam, transports);
+    // classiccraft: the deck carried the body the external driver placed, which is no server move
+    // (`external::take_pose`): it re-placed Steve 20 times a second on a moving tram (2026-10-02).
+    if ext_drive.applied.is_some_and(|a| a.distance(before_carry) <= 0.01) {
+        ext_drive.applied = Some(player.pos);
+    }
 
     if player.active && !player.detached {
         // Not driving, while the camera stays on the body and input, physics and the stream yield:
@@ -351,6 +360,10 @@ pub(super) fn control(
                 },
                 &dynamics,
             );
+            // classiccraft: the external driver still owns the look while the server owns the body.
+            if let Some(pose) = ext_drive.pose {
+                super::external::seat_riding_camera(ext_drive, &pose, head, &mut cam_t);
+            }
             // Flush a stale run once, but never under a ride, whose FORWARD is deliberate.
             if !player.server_riding {
                 movement_net::park_mover(&net.0 .0, &mut player);
@@ -361,7 +374,7 @@ pub(super) fn control(
         }
         // `0x514560`, after `apply_server_moves`, so this frame's root edge is already in `modes`.
         let may_translate = mover.may_translate(player.modes.rooted);
-        let axes = input::move_axes(
+        let mut axes = input::move_axes(
             binds,
             &buttons,
             &mut player,
@@ -370,6 +383,23 @@ pub(super) fn control(
             may_translate,
             may_turn,
         );
+        // classiccraft: an external pose replaces the keys' axes and the facing; the camera's yaw
+        // is the facing, as under a mouse-look.
+        let ext_pose = super::external::take_pose(ext_drive, &player);
+        if let Some(pose) = ext_pose {
+            let (fwd, side) = super::external::axes_of(&pose);
+            axes.fwd = fwd;
+            axes.side = side;
+            axes.mouselook = true;
+            axes.turning = false;
+            axes.translating = fwd != 0 || side != 0;
+            axes.autorun_armed = false;
+            axes.strafe_left = side < 0;
+            axes.strafe_right = side > 0;
+            axes.turn_left = false;
+            axes.turn_right = false;
+            player.face_yaw = pose.face_yaw;
+        }
         let input::MoveAxes {
             fwd: fwd_axis,
             side: side_axis,
@@ -494,6 +524,10 @@ pub(super) fn control(
         // term: health, root and stand state 7. Hover's refusal is the movement handler's
         // (`0x7c623a`), which keeps the mounted flourish reachable while hovering.
         let mut want_jump = binds.fired(crate::bindings::Input::Jump) && may_translate;
+        // classiccraft: the external driver jumps on its own; its take-off arrives in the pose.
+        if ext_pose.is_some() {
+            want_jump = false;
+        }
 
         // Swim or walk, latched with hysteresis at the `0x6030c0` boundary against flicker.
         let surface_y = swim::surface_over_feet(world, player.pos);
@@ -573,7 +607,10 @@ pub(super) fn control(
             knocked,
             air_nudged,
             ground,
-        } = if breach {
+        } = if let Some(pose) = ext_pose {
+            // classiccraft: the external pose in place of every mover.
+            super::external::step(ext_drive, &mut player, pose)
+        } else if breach {
             // Jump while swimming (`0x7c6230`): falls unconditionally, seeded about 14% over a land
             // jump, and streams as a normal jump.
             swim::breach_step(&mut player, &time, &collide, capsule)
@@ -659,6 +696,17 @@ pub(super) fn control(
             now,
             launch_y,
         );
+        // classiccraft: the external driver's physics owns falls, and its own fall damage. Without
+        // FALLING_FAR and a fall clock past 1229 ms vmangos charges none (`Player::HandleFall`);
+        // the pose keeps both, so observers and the body still animate the fall.
+        let (move_flags_now, wire_fall_time) = if ext_pose.is_some() {
+            (
+                move_flags_now & !move_flags::FALLING_FAR,
+                wire_fall_time.min(1000),
+            )
+        } else {
+            (move_flags_now, wire_fall_time)
+        };
         let anim_flags = gait::drive_body_heading(
             &mut player,
             pose_flags,
@@ -720,6 +768,11 @@ pub(super) fn control(
             face_yaw: player.face_yaw,
             command: follow_command,
         };
+        // classiccraft: the rig at zero distance hides our own body (the first-person fade):
+        // Minecraft draws its player (Steve, third person) itself.
+        if ext_pose.is_some() {
+            rig.park_distance(0.0);
+        }
         camera::seat_on_subject(
             dt,
             turn_delta,
@@ -734,6 +787,10 @@ pub(super) fn control(
             &follow,
             &dynamics,
         );
+        // classiccraft: the external camera replaces the seated one.
+        if let Some(pose) = ext_pose {
+            super::external::seat_camera(&pose, &mut cam_t);
+        }
 
         // The cast bar's self-cancel: a new directional start, a jump, or autorun's on edge (the
         // interrupt mask `0x10f0` at `0x5150ce` is forward, back, strafe and autorun, and a clear

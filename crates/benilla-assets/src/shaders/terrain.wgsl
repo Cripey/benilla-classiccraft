@@ -49,6 +49,30 @@ struct WowLight {
 };
 @group(#{MATERIAL_BIND_GROUP}) @binding(90) var<storage, read> wow_light: WowLight;
 
+// classiccraft (fork only): open Minecraft block columns (`benilla_world::terrain_holes`), a window
+// of `size`² chunks from chunk `origin`, 8 words per chunk, column `z·16 + x` a bit. Columns are
+// 1.4667 yd squares on the fixed mapping (Minecraft x = wowY/S = -bevy.x/S, z = wowX/S = -bevy.z/S).
+struct TerrainHoles {
+    origin: vec2<i32>,
+    size: u32,
+    _pad: u32,
+    words: array<u32>,
+};
+@group(#{MATERIAL_BIND_GROUP}) @binding(120) var<storage, read> holes: TerrainHoles;
+
+fn in_open_column(world: vec3<f32>) -> bool {
+    let col = vec2<i32>(floor(-world.xz / 1.4667));
+    let chunk = col >> vec2<u32>(4u);
+    let local = chunk - holes.origin;
+    let n = i32(holes.size);
+    if (local.x < 0 || local.y < 0 || local.x >= n || local.y >= n) {
+        return false;
+    }
+    let idx = u32((col.y & 15) * 16 + (col.x & 15));
+    let word = holes.words[u32(local.y * n + local.x) * 8u + (idx >> 5u)];
+    return (word & (1u << (idx & 31u))) != 0u;
+}
+
 // The vertex-to-fragment payload; `specular` is clamped per vertex, then Gouraud-interpolated.
 struct TerrainVsOut {
     @builtin(position) clip_position: vec4<f32>,
@@ -166,6 +190,10 @@ fn vertex(in: Vertex) -> TerrainVsOut {
 
 @fragment
 fn fragment(in: TerrainVsOut) -> @location(0) vec4<f32> {
+    // classiccraft: a dug Minecraft column shows its blocks, not WoW's ground (fork only).
+    if (in_open_column(in.world_position.xyz)) {
+        discard;
+    }
     // The far-clip wall: the reference clips the detailed world per pixel at its far plane
     // (`farclip`, about 777 yd). Discard beyond `fog_params.w` (0 disables) on planar eye-Z.
     if (wow_light.fog_params.w > 0.0) {

@@ -377,6 +377,18 @@ pub const SMSG_CHAT_RESTRICTED: u16 = 0x02FD; // 765
 /// A defense broadcast (the Eastern Plaguelands towers): `u32 zoneId`, `u32 length`, the text
 /// (`Map.cpp:1868-1884`). Posted like [`SMSG_ZONE_UNDER_ATTACK`] (`0x49de30`).
 pub const SMSG_DEFENSE_MESSAGE: u16 = 0x033B; // 827
+// classiccraft (fork only): the Minecraft <-> WoW combat crossover, served by the classiccraft
+// VMaNGOS fork (`src/game/ClassicCraft.h`). Bodies are built and read by the classiccraft crate.
+pub const CMSG_CC_HELLO: u16 = 0x033C; // 828
+pub const CMSG_CC_HIT: u16 = 0x033D; // 829
+pub const CMSG_CC_ACTORS: u16 = 0x033E; // 830
+pub const CMSG_CC_DIED: u16 = 0x033F; // 831
+pub const SMSG_CC_DAMAGE: u16 = 0x0340; // 832
+pub const SMSG_CC_XP_DROP: u16 = 0x0341; // 833
+pub const CMSG_CC_XP_CLAIM: u16 = 0x0342; // 834
+pub const CMSG_CC_WAYGATE: u16 = 0x0343; // 835: travel through a Minecraft waygate
+pub const CMSG_CC_MINE: u16 = 0x0344; // 836: Steve went down a Minecraft mine (1) or came back (0)
+pub const SMSG_CC_KILL: u16 = 0x0345; // 837: a creature we killed, for Minecraft's loot
 
 /// `/played`: an empty request; the reply is `u32 total`, `u32 level` seconds (`Misc.cpp:278-282`).
 pub const CMSG_PLAYED_TIME: u16 = 0x01CC; // 460

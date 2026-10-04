@@ -176,7 +176,11 @@ pub(super) fn update_time_lighting(
     current_map: Option<Res<CurrentMap>>,
     eye_liquid: crate::liquid::EyeLiquid,
     viewer: Res<crate::view::Viewer>,
-    weather: Option<Res<crate::weather::WeatherState>>,
+    // classiccraft: how far the camera is under WoW's ground rides with the weather (fork only).
+    (weather, underground): (
+        Option<Res<crate::weather::WeatherState>>,
+        Option<Res<crate::terrain_holes::CameraUnderground>>,
+    ),
     view: Res<crate::view::ViewDistance>,
     time: Res<Time>,
     wmo_fog: Res<crate::wmo_portal::CameraWmoFog>,
@@ -231,6 +235,9 @@ pub(super) fn update_time_lighting(
     let storm = weather
         .as_ref()
         .map_or(0.0, |w| crate::weather::storm_blend(w.sky_density));
+    // classiccraft (fork only): no storm fog in a hole dug under WoW's ground, as in a cave; its
+    // near veil washed out the Minecraft blocks a few blocks down (Dun Morogh's snow).
+    let storm = storm * (1.0 - underground.map_or(0.0, |u| u.0));
     let atmo = sampler
         .as_ref()
         .map(|s| {

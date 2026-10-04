@@ -88,6 +88,24 @@ impl WmoRoot {
     /// Per-material `TerrainType.dbc` id (MOMT `+0x20`), the footstep sound, indexed by MOPY face
     /// material. When the down-ray hits a building, the reference re-rays that group's render
     /// faces and reads `MOMT[MOPY[face].material_id] + 0x20` (`0x6a26c0`).
+    /// classiccraft (fork only): per-material texture-1 path (MOMT -> MOTX), empty when none - the
+    /// floor's texture name stands in for a material whose `ground_type` names no footstep.
+    pub fn material_textures(&self) -> Vec<String> {
+        match &self.parsed {
+            ParsedWmo::Root(r) => r
+                .materials
+                .iter()
+                .map(|m| {
+                    r.textures
+                        .get(m.get_texture1_index(&r.texture_offset_index_map) as usize)
+                        .cloned()
+                        .unwrap_or_default()
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     pub fn material_ground_types(&self) -> Vec<u32> {
         match &self.parsed {
             ParsedWmo::Root(r) => r.materials.iter().map(|m| m.ground_type).collect(),

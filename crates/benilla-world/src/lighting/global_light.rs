@@ -116,6 +116,12 @@ pub struct WorldPointLight {
     pub range: f32,
 }
 
+/// classiccraft (fork only): a light from outside the 1.12 scene (a Minecraft torch). It also lights
+/// WMO surfaces and interior props, which the reference's point lights never reach; packed as
+/// `w = 1` on the light's colour row.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct ExternalLight;
+
 /// The packed light for this frame, extracted for [`upload_light`].
 #[derive(Resource, Clone, Copy, ExtractResource)]
 struct WowLightData(LightStd430);
@@ -195,7 +201,12 @@ fn build_light_data(
     debug: Res<DebugState>,
     view: Res<ViewDistance>,
     cam: Query<&GlobalTransform, With<WorldCamera>>,
-    lights_q: Query<(&WorldPointLight, &GlobalTransform, Option<&LightRooms>)>,
+    lights_q: Query<(
+        &WorldPointLight,
+        &GlobalTransform,
+        Option<&LightRooms>,
+        Has<ExternalLight>,
+    )>,
     // The per-frame portal PVS, for the rooms term.
     portals: Query<&crate::wmo_portal::WmoPortalInstance>,
     mut data: ResMut<WowLightData>,
@@ -237,9 +248,9 @@ fn build_light_data(
     // by 4π undoes the spawn's premultiply, so the colour is the authored `colour × intensity`,
     // committed raw. Entries past the count stay stale; the count row guards every reader.
     let cam_pos = cam.single().map(|t| t.translation()).unwrap_or(Vec3::ZERO);
-    let mut pts: Vec<(f32, Vec3, f32, [f32; 3])> = lights_q
+    let mut pts: Vec<(f32, Vec3, f32, [f32; 3], bool)> = lights_q
         .iter()
-        .filter(|(_, _, rooms)| {
+        .filter(|(_, _, rooms, _)| {
             // A culled room's light registers nothing in the reference ([`LightRooms`]); a light
             // that names no rooms always passes.
             crate::wmo_portal::room_admits(
@@ -247,23 +258,23 @@ fn build_light_data(
                 rooms.and_then(|r| portals.get(r.0.instance).ok()),
             )
         })
-        .filter_map(|(pl, gt, _)| {
+        .filter_map(|(pl, gt, _, external)| {
             let p = gt.translation();
             let d2 = p.distance_squared(cam_pos);
             (d2 < POINT_PACK_RADIUS * POINT_PACK_RADIUS).then(|| {
                 let c = pl.color;
                 let s = pl.intensity / (4.0 * std::f32::consts::PI);
                 let rgb = commit_raw([c[0] * s, c[1] * s, c[2] * s]);
-                (d2, p, pl.range, rgb)
+                (d2, p, pl.range, rgb, external)
             })
         })
         .collect();
     pts.sort_by(|a, b| a.0.total_cmp(&b.0));
     pts.truncate(MAX_POINT_LIGHTS);
     fresh.rows[20] = [pts.len() as f32, 0.0, 0.0, 0.0];
-    for (i, (_, p, range, rgb)) in pts.iter().enumerate() {
+    for (i, (_, p, range, rgb, external)) in pts.iter().enumerate() {
         fresh.points[2 * i] = [p.x, p.y, p.z, *range];
-        fresh.points[2 * i + 1] = [rgb[0], rgb[1], rgb[2], 0.0];
+        fresh.points[2 * i + 1] = [rgb[0], rgb[1], rgb[2], if *external { 1.0 } else { 0.0 }];
     }
     // `WOW_POINTS_DUMP=1` prints the nearest 8 packed lights once a second; `=frame` every frame,
     // which a pool that changes frame to frame needs.
@@ -285,7 +296,7 @@ fn build_light_data(
             let snap = |v: f32| (((half + v) / cell).floor() + 0.5) * cell - half;
             let anchor = Vec3::new(snap(cam_pos.x), cam_pos.y, snap(cam_pos.z));
             let (mut boxed, mut sphere) = (0usize, 0usize);
-            for (_, p, _, _) in &pts {
+            for (_, p, _, _, _) in &pts {
                 let dv = *p - anchor;
                 boxed += usize::from(dv.x.abs().max(dv.z.abs()) <= 33.570_166);
                 sphere += usize::from(dv.length() <= 48.0);
@@ -294,7 +305,7 @@ fn build_light_data(
                 "[points] {} packed, cam {cam_pos:.1?} — this chunk's candidates: {boxed} (was {sphere} at the 48 yd sphere), 3 slots",
                 pts.len()
             );
-            for (d2, p, _, rgb) in pts.iter().take(8) {
+            for (d2, p, _, rgb, _) in pts.iter().take(8) {
                 eprintln!(
                     "  d {:6.2}  at [{:8.2},{:7.2},{:8.2}]  rgb [{:.3},{:.3},{:.3}]",
                     d2.sqrt(),

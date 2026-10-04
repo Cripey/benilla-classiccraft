@@ -95,6 +95,12 @@ impl TerrainStreamer {
         let spawned = self.tiles.values().filter(|t| t.furnished).count();
         (spawned, self.tiles.len())
     }
+
+    /// classiccraft: a requested tile's asset handle by `(tile_x, tile_y)`, for the Minecraft
+    /// bridge's terrain export (fork only).
+    pub fn tile_handle(&self, tile: (i32, i32)) -> Option<&Handle<AdtTile>> {
+        self.tiles.get(&tile).map(|t| &t.handle)
+    }
 }
 
 /// One loaded tile and everything it owns.
@@ -462,7 +468,11 @@ fn stream_terrain(
     clutter_cfg: Option<Res<ClutterConfig>>,
     focus: Res<ViewFocus>,
     camera: Query<&Transform, With<WorldCamera>>,
-    shared_light: Option<Res<SharedLightBuffer>>,
+    // classiccraft: the terrain hole buffer rides with the light buffer (fork only).
+    (shared_light, hole_buf): (
+        Option<Res<SharedLightBuffer>>,
+        Option<Res<crate::terrain_holes::TerrainHoleBuffer>>,
+    ),
     cfg: Option<Res<RenderConfig>>,
     // The server's map, the catalog naming its directory, and the view distance the window uses.
     location: (
@@ -483,7 +493,9 @@ fn stream_terrain(
     let (mut materials, mut meshes, wdts, _time, mut activity) = asset_stores;
     let (current_map, map_catalog, view) = location;
     // Idle until other plugins' startup has made the light buffer and the map catalog.
-    let (Some(shared_light), Some(map_catalog)) = (shared_light, map_catalog) else {
+    let (Some(shared_light), Some(hole_buf), Some(map_catalog)) =
+        (shared_light, hole_buf, map_catalog)
+    else {
         return;
     };
     let t0 = Instant::now();
@@ -711,6 +723,7 @@ fn stream_terrain(
                 shadow_array: adt.shadow_array.clone(),
                 params: Vec4::new(benilla_formats::TERRAIN_LAYER_TILES, 0.0, 0.0, 0.0),
                 light_buf: shared_light.0.clone(),
+                hole_buf: hole_buf.0.clone(),
             },
         });
         // One static trimesh per tile from the drawn chunks, built off-thread, riding the root.

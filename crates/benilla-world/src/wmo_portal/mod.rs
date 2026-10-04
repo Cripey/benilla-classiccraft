@@ -31,7 +31,9 @@ pub use interior::{
     indoor_verdict_at, indoors_at, terrain_z_local, IndoorVerdict, LightAttach,
     INTERIOR_PROBE_HEIGHT,
 };
-pub(crate) use interior::{surface_terrain_sample, WmoAreas, POSITION_PROBE_LIFT};
+pub(crate) use interior::{
+    surface_terrain_sample, surface_texture_sample, WmoAreas, POSITION_PROBE_LIFT,
+};
 use interior::{track_area_interior, track_current_interior, track_unit_interiors};
 pub use interior::{
     CurrentAreaInterior, CurrentWmoInterior, PlayerWmoRoom, UnitWmoRoom, WmoInteriorKeys,
@@ -1439,6 +1441,7 @@ mod tests {
                 nav(0x2000, [7.0, -0.5, 0.0], [11.0, 0.5, 2.0], 3, 1),
             ],
             group_collision_tris: vec![floor(0.0), Vec::new(), Vec::new(), Vec::new(), Vec::new()],
+            group_collision_materials: Vec::new(),
             ..portal_model()
         }
     }
@@ -1465,6 +1468,7 @@ mod tests {
             fogs: Vec::new(),
             skybox: None,
             group_collision_tris: Vec::new(),
+            group_collision_materials: Vec::new(),
             group_camera_only_tris: Vec::new(),
             group_collision_bounds: Vec::new(),
             group_collision_grids: Vec::new(),
@@ -1477,6 +1481,7 @@ mod tests {
             group_bounds: Vec::new(),
             group_footprints: Vec::new(),
             material_ground_type: Vec::new(),
+            material_texture: Vec::new(),
             material_diff_color: Vec::new(),
             group_footprint_bounds: Vec::new(),
             group_footprint_grids: Vec::new(),

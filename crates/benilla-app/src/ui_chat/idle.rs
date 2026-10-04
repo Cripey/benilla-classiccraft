@@ -57,6 +57,12 @@ pub(crate) fn stamp_input(
     mut wheel: MessageReader<MouseWheel>,
     motion: Res<AccumulatedMouseMotion>,
 ) {
+    // classiccraft: while an external driver (Minecraft) plays, its input never reaches these
+    // readers (the bridge takes it), so the player would read as idle: auto-AFK sat them down at 5
+    // minutes and the 30-minute leg would log them out (2026-10-03). The driver is input.
+    if crate::player::external::crosshair() {
+        last.0 = time.elapsed();
+    }
     // `count()` and a bitwise `|` drain every reader, or unread messages warm the clock next frame.
     // `repeat` is category 0xa, which has no store; `Released` never carries the flag.
     let any = (keys.read().filter(|k| !k.repeat).count() != 0)

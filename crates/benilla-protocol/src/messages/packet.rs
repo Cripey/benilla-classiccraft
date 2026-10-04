@@ -1251,6 +1251,11 @@ pub enum ServerPacket {
     Other {
         opcode: u16,
     },
+    /// classiccraft (fork only): a custom-opcode packet, its body raw for the classiccraft crate.
+    ClassicCraft {
+        opcode: u16,
+        body: Vec<u8>,
+    },
 }
 
 impl ServerPacket {
@@ -1603,6 +1608,7 @@ impl ServerPacket {
             ServerPacket::UpdateWorldState { .. } => "SMSG_UPDATE_WORLD_STATE".into(),
             ServerPacket::AddonInfo { .. } => "SMSG_ADDON_INFO".into(),
             ServerPacket::Other { opcode } => format!("opcode {opcode:#06x}"),
+            ServerPacket::ClassicCraft { opcode, .. } => format!("classiccraft {opcode:#06x}"),
         }
     }
 }

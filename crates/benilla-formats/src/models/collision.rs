@@ -116,6 +116,36 @@ pub fn accumulate_wmo_group_collision(
     accumulate_wmo_group_faces(group_bytes, MOPY_DETAIL, 0, positions, indices);
 }
 
+/// classiccraft (fork only): the MOPY material of each triangle [`accumulate_wmo_group_collision`]
+/// keeps, in its order (`0xFF` is a collision-only face), so a hit on a building's walking faces
+/// can name its floor (footsteps on bridges and porches, which no room claim covers).
+pub fn wmo_group_collision_materials(group_bytes: &[u8]) -> Vec<u8> {
+    let Ok(ParsedWmo::Group(group)) = parse_wmo(&mut Cursor::new(group_bytes)) else {
+        return Vec::new();
+    };
+    let n_tri = group.vertex_indices.len() / 3;
+    let mut out = Vec::new();
+    for t in 0..n_tri {
+        let Some(mopy) = group.material_info.get(t) else {
+            continue;
+        };
+        if mopy.flags & MOPY_DETAIL != 0 {
+            continue;
+        }
+        // The gather drops a vertex it cannot resolve; the triangle it skips here too.
+        let whole = (0..3).all(|k| {
+            group
+                .vertex_indices
+                .get(t * 3 + k)
+                .is_some_and(|&v| group.vertex_positions.get(v as usize).is_some())
+        });
+        if whole {
+            out.push(mopy.material_id);
+        }
+    }
+    out
+}
+
 /// Append one WMO group file's camera and line-of-sight triangles: every face but `NOCAMCOLLIDE`,
 /// so a `DETAIL` overhang the player walks under (forge pipes) still stops the camera.
 pub fn accumulate_wmo_group_camera_collision(

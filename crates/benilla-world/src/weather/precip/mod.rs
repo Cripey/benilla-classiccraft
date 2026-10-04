@@ -167,8 +167,14 @@ pub(super) struct Precip {
 pub(super) struct WeatherIndoors(bool);
 
 /// Resolves [`WeatherIndoors`] from the portal pass's [`CameraInteriorClaim`] this frame.
-fn gate_weather_indoors(claim: Res<CameraInteriorClaim>, mut indoors: ResMut<WeatherIndoors>) {
-    indoors.0 = claim.0.is_some_and(|c| !c.exterior_visible);
+fn gate_weather_indoors(
+    claim: Res<CameraInteriorClaim>,
+    underground: Option<Res<crate::terrain_holes::CameraUnderground>>,
+    mut indoors: ResMut<WeatherIndoors>,
+) {
+    indoors.0 = claim.0.is_some_and(|c| !c.exterior_visible)
+        // classiccraft (fork only): a camera well under WoW's ground is under cover.
+        || underground.is_some_and(|u| u.0 > 0.5);
 }
 
 /// Deviation: xorshift32 to [0, 1) instead of the reference's lagged-table generator, because

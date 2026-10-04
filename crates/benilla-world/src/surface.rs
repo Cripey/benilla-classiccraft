@@ -23,7 +23,7 @@ use crate::terrain_stream::{
     area_id_under, ground_effect_under, terrain_height_under, TerrainStreamer,
 };
 use crate::wmo_portal::{
-    indoors_at, surface_terrain_sample, UnitWmoRoom, WmoPortalInstance, POSITION_PROBE_LIFT,
+    indoors_at, surface_terrain_sample, surface_texture_sample, UnitWmoRoom, WmoPortalInstance, POSITION_PROBE_LIFT,
 };
 
 /// The placements and terrain the surface question rays, read live so no answer outlives its
@@ -61,6 +61,20 @@ impl SurfaceUnderfoot<'_, '_> {
             None => ground_effect_under(&self.streamer, &self.adt_tiles, pos)
                 .and_then(|e| cat.terrain_of(e)),
         }
+    }
+
+    /// classiccraft (fork only): the texture path of the building floor under `pos` for a unit
+    /// holding `room`; `None` outdoors or off a floor face.
+    pub(crate) fn floor_texture(&self, room: Option<&UnitWmoRoom>, pos: Vec3) -> Option<String> {
+        let room = room.and_then(UnitWmoRoom::room)?;
+        let inst = self.instances.get(room.instance).ok()?;
+        let model = self.wmos.get(&inst.handle)?;
+        let probe_world = pos + Vec3::Y * POSITION_PROBE_LIFT;
+        let local = inst
+            .world_from_local
+            .inverse()
+            .transform_point3(probe_world);
+        surface_texture_sample(model, usize::from(room.group), bevy_to_wow(local))
     }
 
     /// The MCNK `areaId` under `pos` (Bevy space), without the WMO claim that the player's own

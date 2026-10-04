@@ -32,6 +32,7 @@ impl Plugin for ClutterPlugin {
                 Update,
                 (
                     remesh_on_cutout_change,
+                    remesh_on_holes_change,
                     stream_chunk_clutter,
                     evict_clutter_geometry,
                     scope_clutter_geometry,
@@ -67,6 +68,49 @@ fn remesh_on_cutout_change(
         "clutter: detailDoodadAlpha {} — dropped {n} built mesh(es) to re-cut",
         (cfg.alpha_ref * 255.0).round() as u32
     );
+}
+
+/// classiccraft (fork only): ground clutter over a dug Minecraft column (`terrain_holes`) goes with
+/// the ground under it - its tufts floated over the hole. Each rebuild of the hole window drops the
+/// built clutter of the chunks over the columns that changed; they rebuild without those tufts.
+fn remesh_on_holes_change(
+    mut commands: Commands,
+    holes: Option<Res<crate::terrain_holes::TerrainHoles>>,
+    mut chunks: Query<&mut ClutterChunk>,
+    mut seen: Local<u64>,
+) {
+    let Some(holes) = holes else {
+        return;
+    };
+    if holes.generation == *seen {
+        return;
+    }
+    // A missed rebuild (two in one frame) leaves its changes unknown: re-cut everything built.
+    let missed = holes.generation > *seen + 1;
+    *seen = holes.generation;
+    // Changed chunks as Bevy XZ boxes: x = -wowY, z = -wowX.
+    let boxes: Vec<(Vec2, Vec2)> = holes
+        .changed
+        .iter()
+        .map(|&c| {
+            let (lo, hi) = crate::terrain_holes::TerrainHoles::chunk_wow_rect(c);
+            (Vec2::new(-hi[1], -hi[0]), Vec2::new(-lo[1], -lo[0]))
+        })
+        .collect();
+    for mut cc in &mut chunks {
+        let (lo, hi) = (cc.bounds.0.xz(), cc.bounds.1.xz());
+        let hit = missed
+            || boxes
+                .iter()
+                .any(|(blo, bhi)| lo.x <= bhi.x && hi.x >= blo.x && lo.y <= bhi.y && hi.y >= blo.y);
+        if !hit {
+            continue;
+        }
+        cc.bare = false;
+        for e in cc.built.drain(..) {
+            commands.entity(e).try_despawn();
+        }
+    }
 }
 
 /// Drop the decoded clutter geometry on a map change; the new map decodes its own models.
@@ -182,6 +226,9 @@ pub(crate) struct ClutterChunk {
     models: Vec<(String, Vec<ShadedPlacement>)>,
     /// The built meshes, children of this entity; empty when not built.
     built: Vec<Entity>,
+    /// classiccraft (fork only): built, but every tuft stood over a dug column - nothing to build
+    /// again until the holes change.
+    bare: bool,
 }
 
 /// Slack (yd) past the fade reach, so a chunk is built before any of its grass can show.
@@ -292,6 +339,7 @@ pub(crate) fn scatter_tile_clutter(
                     bounds: (lo, hi),
                     models: by_model.into_iter().collect(),
                     built: Vec::new(),
+                    bare: false,
                 })
                 .id(),
         );
@@ -303,6 +351,7 @@ pub(crate) fn scatter_tile_clutter(
 fn build_chunk_clutter(
     chunk_entity: Entity,
     models: &[(String, Vec<ShadedPlacement>)],
+    holes: Option<&crate::terrain_holes::TerrainHoles>,
     alpha_ref: f32,
     fade_far: f32,
     geometry: &mut ClutterGeometry,
@@ -314,6 +363,21 @@ fn build_chunk_clutter(
 ) -> Vec<Entity> {
     let mut out = Vec::new();
     for (model_path, placements) in models {
+        // classiccraft (fork only): no tuft over a dug Minecraft column.
+        let kept: Vec<&ShadedPlacement>;
+        let placements: Vec<&ShadedPlacement> = match holes {
+            Some(h) => {
+                kept = placements
+                    .iter()
+                    .filter(|sp| !h.is_open_wow(sp.placement.position[0], sp.placement.position[1]))
+                    .collect();
+                kept
+            }
+            None => placements.iter().collect(),
+        };
+        if placements.is_empty() {
+            continue;
+        }
         let subs = geometry.0.or_insert_with(model_path.clone(), || {
             load_m2_mesh(&mut assets.chain.lock_recover(), model_path).unwrap_or_default()
         });
@@ -328,7 +392,7 @@ fn build_chunk_clutter(
             let mut normals = Vec::with_capacity(vcount);
             let mut colors = Vec::with_capacity(vcount);
             let mut indices = Vec::with_capacity(sub.indices.len() * placements.len());
-            for sp in placements {
+            for sp in placements.iter().copied() {
                 let d = &sp.placement;
                 let base = positions.len() as u32;
                 let origin = wow_to_bevy(d.position);
@@ -429,6 +493,7 @@ pub(crate) fn stream_chunk_clutter(
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<WowModelMaterial>>,
+    holes: Option<Res<crate::terrain_holes::TerrainHoles>>,
 ) {
     // Both are absent without an install, and a hard `ResMut` would fail validation and panic.
     let (Some(mut geometry), Some(mut assets)) = (geometry, assets) else {
@@ -458,13 +523,16 @@ pub(crate) fn stream_chunk_clutter(
     for (ent, mut cc) in &mut chunks {
         let d2 = box_distance_squared(cam_pos, cc.bounds);
         if cc.built.is_empty() {
-            if d2 <= build_d2 {
+            if d2 <= build_d2 && !cc.bare {
                 wanted.push((d2, ent));
             }
         } else if d2 > drop_d2 {
             for e in cc.built.drain(..) {
                 commands.entity(e).try_despawn();
             }
+        }
+        if cc.bare && d2 > drop_d2 {
+            cc.bare = false; // out of range: rebuilt from scratch on return
         }
     }
     wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -483,6 +551,7 @@ pub(crate) fn stream_chunk_clutter(
         let built = build_chunk_clutter(
             ent,
             &cc.models,
+            holes.as_deref(),
             cfg.alpha_ref,
             cfg.fade_far,
             &mut geometry,
@@ -492,6 +561,7 @@ pub(crate) fn stream_chunk_clutter(
             &mut materials,
             &mut commands,
         );
+        cc.bare = built.is_empty();
         cc.built = built;
     }
     // With a backlog the cap made it late, the expected burst behind a login or teleport's loading

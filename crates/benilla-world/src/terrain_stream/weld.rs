@@ -8,6 +8,7 @@
 //!   unload line, far beyond any reachable or visible doodad.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use bevy::prelude::*;
 
@@ -15,6 +16,7 @@ use super::collider::{build_collider_task, doodad_hulls_bare, PendingCollider};
 use crate::collision::PickOccluder;
 use crate::interact::WorldObject;
 use crate::model_render::ModelKind;
+use crate::object_surface::{NamedHull, SurfaceSource};
 
 /// Hull cap per weld: keeps a weld's broadphase AABB a neighbourhood, not a zone.
 const WELD_MAX_HULLS: u32 = 128;
@@ -34,10 +36,13 @@ struct WeldAcc {
     hulls: u32,
     /// [`HullWelds::frame`] at the last append: the idle clock.
     last_add: u32,
+    /// classiccraft: each hull's bounds and model, for the footsteps' object under the feet.
+    names: Vec<NamedHull>,
 }
 
 impl WeldAcc {
-    fn append(&mut self, verts: Vec<Vec3>, tris: Vec<[u32; 3]>, frame: u32) {
+    fn append(&mut self, model: Arc<str>, verts: Vec<Vec3>, tris: Vec<[u32; 3]>, frame: u32) {
+        self.names.push(NamedHull::of(model, &verts));
         let base = self.verts.len() as u32;
         self.verts.extend(verts);
         self.tris
@@ -66,7 +71,13 @@ pub struct HullWelds {
 }
 
 impl HullWelds {
-    pub(super) fn add_tile(&mut self, tile: (i32, i32), verts: Vec<Vec3>, tris: Vec<[u32; 3]>) {
+    pub(super) fn add_tile(
+        &mut self,
+        tile: (i32, i32),
+        model: Arc<str>,
+        verts: Vec<Vec3>,
+        tris: Vec<[u32; 3]>,
+    ) {
         let frame = self.frame;
         self.tiles
             .entry(tile)
@@ -75,11 +86,18 @@ impl HullWelds {
                 tris: Vec::new(),
                 hulls: 0,
                 last_add: frame,
+                names: Vec::new(),
             })
-            .append(verts, tris, frame);
+            .append(model, verts, tris, frame);
     }
 
-    pub(super) fn add_prop(&mut self, uid: u32, verts: Vec<Vec3>, tris: Vec<[u32; 3]>) {
+    pub(super) fn add_prop(
+        &mut self,
+        uid: u32,
+        model: Arc<str>,
+        verts: Vec<Vec3>,
+        tris: Vec<[u32; 3]>,
+    ) {
         let frame = self.frame;
         self.props
             .entry(uid)
@@ -88,8 +106,9 @@ impl HullWelds {
                 tris: Vec::new(),
                 hulls: 0,
                 last_add: frame,
+                names: Vec::new(),
             })
-            .append(verts, tris, frame);
+            .append(model, verts, tris, frame);
     }
 
     /// Accumulators not yet flushed, counted into `colliders_pending` so the settle release waits
@@ -151,6 +170,7 @@ pub(super) fn flush_hull_welds(
 fn spawn_weld(commands: &mut Commands, acc: &mut WeldAcc) -> Entity {
     let verts = std::mem::take(&mut acc.verts);
     let tris = std::mem::take(&mut acc.tris);
+    let names: Arc<[NamedHull]> = std::mem::take(&mut acc.names).into();
     commands
         .spawn((
             PendingCollider::new(build_collider_task(verts, tris), None, !doodad_hulls_bare()),
@@ -161,6 +181,7 @@ fn spawn_weld(commands: &mut Commands, acc: &mut WeldAcc) -> Entity {
                 id: 0,
                 detail: format!("{} hulls welded", acc.hulls),
             },
+            SurfaceSource::Hulls(names),
         ))
         .id()
 }
@@ -221,8 +242,8 @@ mod tests {
     fn append_rebases_indices() {
         let mut welds = HullWelds::default();
         let (v, t) = hull();
-        welds.add_tile((0, 0), v.clone(), t.clone());
-        welds.add_tile((0, 0), v, t);
+        welds.add_tile((0, 0), "test".into(), v.clone(), t.clone());
+        welds.add_tile((0, 0), "test".into(), v, t);
         let acc = welds.tiles.get(&(0, 0)).unwrap();
         assert_eq!(acc.hulls, 2);
         assert_eq!(acc.verts.len(), 6);
@@ -241,7 +262,7 @@ mod tests {
             let mut welds = app.world_mut().resource_mut::<HullWelds>();
             for _ in 0..WELD_MAX_HULLS {
                 let (v, t) = hull();
-                welds.add_tile((3, 4), v, t);
+                welds.add_tile((3, 4), "test".into(), v, t);
             }
         }
         app.world_mut().run_system_once(flush_hull_welds).unwrap();
@@ -264,7 +285,7 @@ mod tests {
         {
             let mut welds = app.world_mut().resource_mut::<HullWelds>();
             let (v, t) = hull();
-            welds.add_tile((0, 0), v, t);
+            welds.add_tile((0, 0), "test".into(), v, t);
         }
         for _ in 0..(WELD_IDLE_FRAMES - 1) {
             app.world_mut().run_system_once(flush_hull_welds).unwrap();
@@ -283,7 +304,7 @@ mod tests {
             let mut welds = app.world_mut().resource_mut::<HullWelds>();
             for _ in 0..WELD_MAX_HULLS {
                 let (v, t) = hull();
-                welds.add_tile((9, 9), v, t);
+                welds.add_tile((9, 9), "test".into(), v, t);
             }
         }
         let before = app.world().entities().len();
@@ -303,7 +324,7 @@ mod tests {
             let mut welds = app.world_mut().resource_mut::<HullWelds>();
             for _ in 0..WELD_MAX_HULLS {
                 let (v, t) = hull();
-                welds.add_prop(7, v, t);
+                welds.add_prop(7, "test".into(), v, t);
             }
         }
         app.world_mut().run_system_once(flush_hull_welds).unwrap();

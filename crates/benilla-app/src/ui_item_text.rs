@@ -170,7 +170,8 @@ impl Plugin for UiItemTextPlugin {
                 (
                     // Feed before the input pass so an open paints this frame; drain after it
                     // so a close clears this frame.
-                    feed_item_text.in_set(UiFeed),
+                    // classiccraft: in crosshair mode the driver shows the book instead.
+                    (forward_book, feed_item_text).chain().in_set(UiFeed),
                     drain_item_text.after(UiInput),
                 ),
             );
@@ -268,6 +269,11 @@ fn feed_item_text(
     let Some(sess) = open.pending.as_mut() else {
         return;
     };
+    // classiccraft: a page chain read from the external driver's crosshair is its to show
+    // ([`forward_book`]); WoW's reader stays shut.
+    if crate::player::external::crosshair() && matches!(sess.source, ReadSource::Pages { .. }) {
+        return;
+    }
     if sess.told.get(&script).ready {
         return;
     }
@@ -369,6 +375,65 @@ fn feed_item_text(
     }));
     script.fire_event("ITEM_TEXT_READY", vec![]);
     sess.told.get(&script).ready = true;
+}
+
+/// classiccraft (fork only): a book or plaque read while the external driver drives goes to it
+/// whole ([`crate::player::external::BookOut`], Minecraft's book screen): every page of the chain,
+/// asked for as needed, `$` tokens expanded as WoW's reader does; then the session closes. A mail
+/// letter stays WoW's.
+#[allow(clippy::too_many_arguments)]
+fn forward_book(
+    mut open: ResMut<ItemTextOpen>,
+    pages: Res<PageTexts>,
+    objects: Objects,
+    items: Res<Items>,
+    names: Res<NameCache>,
+    go_templates: Res<GameObjectTemplates>,
+    materials: Option<Res<PageMaterials>>,
+    commands: Res<NetCommands>,
+    self_q: Query<(&crate::net::ObjectStore, &crate::net::Guid), With<crate::net::SelfPlayer>>,
+    states: Res<crate::world_state::WorldStates>,
+    mut out: MessageWriter<crate::player::external::BookOut>,
+) {
+    if !crate::player::external::crosshair() {
+        return;
+    }
+    let Some(sess) = open.pending.as_ref() else {
+        return;
+    };
+    if !matches!(sess.source, ReadSource::Pages { .. }) {
+        return;
+    }
+    let guid = sess.object_guid;
+    let Some(readable) = readable(guid, &objects, &items, &go_templates, materials.as_deref(), &commands)
+    else {
+        return; // template in flight
+    };
+    let mut texts = Vec::new();
+    let mut page_id = readable.page_head;
+    while page_id != 0 && texts.len() < 64 {
+        let Some(page) = pages.get_or_ask(page_id, guid, &commands) else {
+            return; // a page in flight: next frame
+        };
+        texts.push(page.text.clone());
+        page_id = page.next;
+    }
+    let subject = crate::npc_text::player_identity(&self_q, &names, &commands);
+    let ctx = crate::npc_text::MacroContext {
+        subject: subject.as_ref(),
+        states: &states,
+    };
+    let pages_out: Vec<String> = texts.iter().map(|t| crate::npc_text::substitute(t, &ctx)).collect();
+    info!(
+        "classiccraft: book {:?} ({} pages) to the external driver",
+        readable.title,
+        pages_out.len()
+    );
+    out.write(crate::player::external::BookOut {
+        title: readable.title,
+        pages: pages_out,
+    });
+    open.toggle_closed(guid);
 }
 
 /// `PageTextMaterial.dbc`; absent without client data, leaving every reader on Parchment.

@@ -207,6 +207,8 @@ fn drive_letterbox(
     mut logged: Local<f32>,
 ) {
     let playing = cine.is_playing();
+    // classiccraft: an external driver needs to know, to leave the input to WoW (the ESC skip).
+    crate::player::external::set_cinematic(playing);
     // The HUD is Lua's, as in the reference: `CINEMATIC_START` runs `ShowUIPanel`, whose
     // `area = "full"` routes to `SetFullScreenFrame`, which hides `UIParent`.
 

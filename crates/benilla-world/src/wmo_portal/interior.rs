@@ -522,6 +522,20 @@ pub(crate) fn surface_terrain_sample(
         .copied()
 }
 
+/// classiccraft (fork only): the texture path of the floor face [`surface_terrain_sample`] reads.
+pub(crate) fn surface_texture_sample(
+    model: &WmoModel,
+    group: usize,
+    probe_local: [f32; 3],
+) -> Option<String> {
+    let (_, _, _, material) = footprint_scan(model, probe_local, false, Some(group))?;
+    model
+        .material_texture
+        .get(usize::from(material))
+        .filter(|t| !t.is_empty())
+        .cloned()
+}
+
 /// The containment attach's upward retry (`0x6a908d`, re-cast to `anchor.z + 1000`): the nearest
 /// render face above the probe.
 pub(super) fn footprint_sample_above(
@@ -663,6 +677,7 @@ mod tests {
             fogs: Vec::new(),
             skybox: None,
             group_collision_tris: Vec::new(),
+            group_collision_materials: Vec::new(),
             group_camera_only_tris: Vec::new(),
             group_collision_bounds: Vec::new(),
             group_collision_grids: Vec::new(),
@@ -675,6 +690,7 @@ mod tests {
             group_bounds: Vec::new(),
             group_footprints: Vec::new(),
             material_ground_type: Vec::new(),
+            material_texture: Vec::new(),
             material_diff_color: Vec::new(),
             group_footprint_bounds: Vec::new(),
             group_footprint_grids: Vec::new(),

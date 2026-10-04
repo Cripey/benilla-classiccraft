@@ -1056,6 +1056,7 @@ fn writer_loop(
                     ClientCommand::SetSheathed { state } => w.set_sheathed(state),
                     ClientCommand::StandStateChange { state } => w.stand_state_change(state),
                     ClientCommand::MountSpecial => w.mount_special(),
+                    ClientCommand::ClassicCraft { opcode, body } => w.send_classiccraft(opcode, &body),
                     ClientCommand::TextEmote { text_id, target } => w.text_emote(text_id, target),
                     ClientCommand::GossipHello { guid } => w.gossip_hello(guid),
                     ClientCommand::GossipSelectOption { guid, option } => {

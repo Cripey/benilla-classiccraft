@@ -112,6 +112,8 @@ impl LoginRefusal {
 pub enum SessionEvent {
     /// A login attempt reached `stage`; emitted by the IO thread, never wire-decoded.
     LoginStage { stage: LoginStage },
+    /// classiccraft (fork only): a custom-opcode packet for the classiccraft crate, body raw.
+    ClassicCraft { opcode: u16, body: Vec<u8> },
     /// The account's realms (`CMD_REALM_LIST`); the IO thread blocks for the app's pick. Re-sent on
     /// each refresh (the reference re-requests every 5 s) and on a realm change.
     RealmList { realms: Vec<crate::RealmInfo> },

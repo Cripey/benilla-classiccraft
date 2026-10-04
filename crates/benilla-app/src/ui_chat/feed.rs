@@ -741,6 +741,8 @@ pub(super) fn feed_chat(
                 }
                 text_filter.mask_chat(msg.chat_type, &mut text);
                 let text = text;
+                // classiccraft: NPC speech, as shown, for Minecraft's chat too (fork only).
+                crate::player::external::npc_line(msg.chat_type, name.as_deref(), &text);
                 let mut event = ChatEvent {
                     kind,
                     text: text.clone(),

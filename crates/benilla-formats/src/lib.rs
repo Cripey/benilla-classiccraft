@@ -238,7 +238,7 @@ pub use value_track::{TrackValue, ValueTrack};
 mod models;
 pub use models::{
     accumulate_wmo_group_camera_collision, accumulate_wmo_group_camera_only_collision,
-    accumulate_wmo_group_collision, authored_half_height, batch_footprint, glue_art_extent,
+    accumulate_wmo_group_collision, wmo_group_collision_materials, authored_half_height, batch_footprint, glue_art_extent,
     hand_grip_finger_poses, load_m2_animation_summary, load_m2_bone_spins, load_m2_bounds,
     load_m2_collision_hull, load_m2_mesh, load_m2_mesh_skinned, load_object_model, load_wmo,
     load_wmo_collision_tris, m2_bone_spins, m2_owner_reach, m2_ribbon_emitter_count,

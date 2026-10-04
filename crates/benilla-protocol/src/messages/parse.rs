@@ -222,6 +222,12 @@ fn parse_server_body(
 ) -> io::Result<ServerPacket> {
     let mut r: &[u8] = cursor;
     let packet = match opcode {
+        // classiccraft (fork only): read whole, decoded by the classiccraft crate.
+        opcode::SMSG_CC_DAMAGE | opcode::SMSG_CC_XP_DROP | opcode::SMSG_CC_KILL => {
+            let body = r.to_vec();
+            r = &r[r.len()..];
+            ServerPacket::ClassicCraft { opcode, body }
+        }
         opcode::SMSG_AUTH_CHALLENGE => ServerPacket::AuthChallenge {
             server_seed: read_u32_le(&mut r)?,
         },

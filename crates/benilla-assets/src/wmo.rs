@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use benilla_formats::{
     accumulate_wmo_group_camera_collision, accumulate_wmo_group_camera_only_collision,
-    accumulate_wmo_group_collision, parse_wmo_lights, parse_wmo_root, wmo_group_doodad_refs,
+    accumulate_wmo_group_collision, wmo_group_collision_materials, parse_wmo_lights, parse_wmo_root, wmo_group_doodad_refs,
     wmo_group_footprint_tris, wmo_group_header, wmo_group_light_refs, wmo_group_liquid_mesh,
     wmo_group_submeshes, CollisionMesh, FootprintTris, LiquidMesh, WmoDoodad, WmoDoodadSet, WmoFog,
     WmoGroupInfo, WmoLight, WmoPortalInfo, WmoPortalRef,
@@ -58,6 +58,9 @@ pub struct WmoModel {
     /// Per-group walking-collision faces (non-DETAIL, no orientation filter): the reference's
     /// walking BSP set (`0x6be250`, mask `0x84`) that the current-group down-ray casts on.
     pub group_collision_tris: Vec<Vec<[[f32; 3]; 3]>>,
+    /// classiccraft (fork only): the MOPY material of each face in [`Self::group_collision_tris`],
+    /// index-parallel (`0xFF` collision-only); empty for a group whose counts disagree.
+    pub group_collision_materials: Vec<Vec<u8>>,
     /// Per-group camera-only faces (DETAIL `0x04` set, NOCAMCOLLIDE `0x02` clear). Deviation: the
     /// down-ray tries them when the walking and portal legs miss and no terrain lies below the eye,
     /// because the reference reads outside there and blanks the building around a camera sealed in
@@ -96,6 +99,8 @@ pub struct WmoModel {
     pub group_footprints: Vec<Option<FootprintTris>>,
     /// Root MOMT `ground_type` per material: the `TerrainType.dbc` id of a face's MOPY material.
     pub material_ground_type: Vec<u32>,
+    /// classiccraft (fork only): root MOMT texture-1 path per material (footsteps by floor texture).
+    pub material_texture: Vec<String>,
     /// Root MOMT `diffColor` per material, RGB 0..1: an interior MLIQ pool's colour, by material.
     pub material_diff_color: Vec<[f32; 3]>,
     /// Per-group AABB of the faces [`Self::group_footprints`] uses: the footprint broad phase.
@@ -403,6 +408,8 @@ impl AssetLoader for WmoModelLoader {
             .collect();
         let mut group_collision_tris: Vec<Vec<[[f32; 3]; 3]>> =
             vec![Vec::new(); root.group_count() as usize];
+        let mut group_collision_materials: Vec<Vec<u8>> =
+            vec![Vec::new(); root.group_count() as usize];
         let mut group_camera_only_tris: Vec<Vec<[[f32; 3]; 3]>> =
             vec![Vec::new(); root.group_count() as usize];
         let mut col_pos: Vec<[f32; 3]> = Vec::new();
@@ -443,6 +450,14 @@ impl AssetLoader for WmoModelLoader {
                     ) {
                         tris.push([a, b, c]);
                     }
+                }
+                // classiccraft: kept only when it pairs face for face with the triangles.
+                let mats = wmo_group_collision_materials(&gbytes);
+                if let (true, Some(slot)) = (
+                    mats.len() == tris.len(),
+                    group_collision_materials.get_mut(gi as usize),
+                ) {
+                    *slot = mats;
                 }
             }
             let base = col_pos.len() as u32;
@@ -553,6 +568,7 @@ impl AssetLoader for WmoModelLoader {
             fogs: root.fogs().to_vec(),
             skybox: root.skybox().map(str::to_owned),
             group_collision_tris,
+            group_collision_materials,
             group_camera_only_tris,
             group_collision_bounds,
             group_collision_grids,
@@ -568,6 +584,7 @@ impl AssetLoader for WmoModelLoader {
             doodad_groups,
             group_footprints,
             material_ground_type: root.material_ground_types(),
+            material_texture: root.material_textures(),
             material_diff_color: root.material_diff_colors(),
             group_footprint_bounds,
             group_footprint_grids,

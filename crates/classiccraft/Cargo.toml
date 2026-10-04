@@ -1,0 +1,32 @@
+[package]
+name = "classiccraft"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "classiccraft: benilla with a real Minecraft client bridged in over shared memory (fork only)"
+
+[lints]
+workspace = true
+
+[features]
+default = ["dev"]
+dev = ["benilla-app/dev"]
+
+[dependencies]
+benilla-app = { path = "../benilla-app", default-features = false }
+benilla-world = { path = "../benilla-world", default-features = false }
+benilla-assets = { path = "../benilla-assets", default-features = false }
+benilla-formats = { path = "../benilla-formats", default-features = false }
+benilla-ui = { path = "../benilla-ui" }
+bevy = { workspace = true }
+avian3d = "0.6"
+memmap2 = "0.9.10"
+anyhow = "1"
+
+[build-dependencies]
+benilla-buildstamp = { path = "../benilla-buildstamp" }
+
+[[bin]]
+name = "classiccraft"
+path = "src/main.rs"
+test = false

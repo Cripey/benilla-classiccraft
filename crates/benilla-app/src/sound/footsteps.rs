@@ -82,10 +82,19 @@ fn footstep_sounds(
     // The state gates read the root unit: `0x623390`'s `this` is the unit the mount model's
     // events are registered against (`0x607a00`), the rider.
     parents: Query<&ChildOf>,
-    root_state: Query<(Option<&ObjectStore>, Option<&MovementState>)>,
+    root_state: Query<(
+        Option<&ObjectStore>,
+        Option<&MovementState>,
+        Has<crate::net::SelfPlayer>,
+    )>,
     footsteps: Option<Res<Footsteps>>,
-    // The foley's material table and creature catalog, one tuple for the 16-param ceiling.
-    foley: (Option<Res<super::Materials>>, Option<Res<Creatures>>),
+    // The foley's material table and creature catalog, one tuple for the 16-param ceiling; and
+    // classiccraft's external driver (fork only).
+    foley: (
+        Option<Res<super::Materials>>,
+        Option<Res<Creatures>>,
+        Option<Res<crate::external::ExternalDrive>>,
+    ),
     objects: crate::net::Objects,
     mut items: Option<ResMut<Items>>,
     net_commands: Res<NetCommands>,
@@ -100,7 +109,10 @@ fn footstep_sounds(
     if events.is_empty() {
         return;
     }
-    let (materials, creatures) = foley;
+    let (materials, creatures, drive) = foley;
+    // classiccraft (fork only): while Minecraft drives the player, its own footsteps play for Steve
+    // (by the WoW surface underfoot, the mod); WoW's for our own body are muted.
+    let mc_self = drive.as_ref().is_some_and(|d| d.pose.is_some() || d.drove);
     let (Some(footsteps), Some(voices), Some(mut kits), Some(assets)) =
         (footsteps, voices, kits, assets)
     else {
@@ -119,9 +131,12 @@ fn footstep_sounds(
         while let Ok(child_of) = parents.get(root) {
             root = child_of.parent();
         }
-        let Ok((store, movement)) = root_state.get(root) else {
+        let Ok((store, movement, is_self)) = root_state.get(root) else {
             continue;
         };
+        if mc_self && is_self {
+            continue;
+        }
         if movement.is_some_and(|m| m.flags & move_flags::HOVER != 0) {
             continue;
         }

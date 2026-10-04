@@ -28,6 +28,7 @@ use crate::liquid::{spawn_wmo_liquids, LiquidAssets};
 use crate::model_forms::{FormSlices, ModelForms, ModelKey, WANT_SKINNED, WANT_STATIC};
 use crate::model_render::ModelKind;
 use crate::model_render::ShadeSel;
+use crate::object_surface::{NamedHull, SurfaceSource};
 use crate::wmo_portal::{WmoGroupVis, WmoPortalInstance, WmoRoom};
 use benilla_assets::m2_url;
 use benilla_assets::materials::WowModelMaterial;
@@ -242,10 +243,12 @@ pub(super) fn spawn_loaded_placements(
                         .then(|| placement_collider_data(m.collision.as_ref(), &p.transform))
                         .flatten()
                     {
+                        let model: Arc<str> = handle_label(h).into();
                         if hull_weld_disabled() {
                             ents.push(
                                 commands
                                     .spawn((
+                                        SurfaceSource::Hulls(Arc::new([NamedHull::of(model, &verts)])),
                                         PendingCollider::new(
                                             build_collider_task(verts, tris),
                                             None,
@@ -256,7 +259,7 @@ pub(super) fn spawn_loaded_placements(
                                     .id(),
                             );
                         } else {
-                            welds.add_tile(p.owner, verts, tris);
+                            welds.add_tile(p.owner, model, verts, tris);
                         }
                     }
                     spawn_emitters_for(
@@ -499,6 +502,11 @@ pub(super) fn spawn_loaded_placements(
                                     ),
                                     // The walk faces take the selection ring (floors, steps).
                                     GroundDecalSurface,
+                                    SurfaceSource::Wmo {
+                                        handle: h.clone(),
+                                        world_from_local: p.transform.compute_affine(),
+                                        model: handle_label(h).into(),
+                                    },
                                     // Clamps the mouse pick. The reference's occluder faces are
                                     // MOPY reject-mask 0x84; the walk bake (0x04) is the nearest.
                                     PickOccluder,
@@ -712,10 +720,12 @@ pub(super) fn spawn_loaded_placements(
                 .then(|| placement_collider_data(m.collision.as_ref(), &d.transform))
                 .flatten()
             {
+                let model: Arc<str> = handle_label(&d.handle).into();
                 if hull_weld_disabled() {
                     ents.push(
                         commands
                             .spawn((
+                                SurfaceSource::Hulls(Arc::new([NamedHull::of(model, &verts)])),
                                 PendingCollider::new(
                                     build_collider_task(verts, tris),
                                     None,
@@ -726,7 +736,7 @@ pub(super) fn spawn_loaded_placements(
                             .id(),
                     );
                 } else {
-                    welds.add_prop(unique_id, verts, tris);
+                    welds.add_prop(unique_id, model, verts, tris);
                 }
             }
             spawn_emitters_for(

@@ -120,6 +120,16 @@ impl super::UiScript {
         model.quest_log = state;
     }
 
+    /// classiccraft: the pushed quest-log snapshot (Minecraft's own quest log reads it).
+    pub fn quest_log(&self) -> QuestLogState {
+        self.model_ref().quest_log.clone()
+    }
+
+    /// classiccraft: abandon a quest, as `SetAbandonQuest` + `AbandonQuest()` do.
+    pub fn push_quest_log_abandon(&mut self, quest_id: u32) {
+        self.model_mut().quest_log_abandons.push(quest_id);
+    }
+
     /// The watched quest ids, in watch order.
     pub fn quest_log_watched(&self) -> Vec<u32> {
         self.model_ref().quest_log_watched.clone()
