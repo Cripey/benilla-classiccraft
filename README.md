@@ -1,3 +1,10 @@
+> **This is benilla-classiccraft, a modified fork of [benilla](https://github.com/samwhosung/benilla)**
+> for [classiccraft](https://github.com/Cripey/classiccraft) (a real Minecraft client bridged into
+> World of Warcraft 1.12.1). Changes from upstream: the `crates/classiccraft` crate and edits marked
+> `classiccraft` across the other crates; see the git history for every change and its date.
+> Licensed like upstream, MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`). The rest of this
+> README is upstream's.
+
 <div align="center">
   <h1>benilla</h1>
   <p><b>A complete World of Warcraft 1.12.1 client, written from scratch in Rust and <a href="https://bevy.org">Bevy</a></b></p>
