@@ -145,11 +145,11 @@ pub(crate) fn supply_pose(
     if bridge.shm.is_none() && now >= bridge.retry_at {
         match Shm::open() {
             Ok(shm) => {
-                info!("classiccraft: bridge file {} ready", crate::shm::PATH);
+                info!("classiccraft: bridge file {} ready", crate::link::describe(crate::shm::NAME));
                 bridge.shm = Some(shm);
             }
             Err(e) => {
-                warn!("classiccraft: cannot open {}: {e}", crate::shm::PATH);
+                warn!("classiccraft: cannot open {}: {e}", crate::link::describe(crate::shm::NAME));
                 bridge.retry_at = now + 5.0;
             }
         }

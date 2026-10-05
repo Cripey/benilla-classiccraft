@@ -9,6 +9,7 @@ mod geom;
 mod music;
 mod holes;
 mod input;
+mod link;
 mod overlay;
 mod render;
 mod shm;

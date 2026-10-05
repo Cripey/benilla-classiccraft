@@ -7,21 +7,19 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
-use std::fs::OpenOptions;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{fence, Ordering};
 
 use benilla_app::external::{ExternalDriveSet, SelfReport};
 use benilla_world::collision::{ColliderEpoch, WorldCollision};
 use bevy::prelude::*;
-use memmap2::MmapMut;
 
 use crate::bridge::S;
 use crate::holes::HoleMasks;
 use benilla_assets::AdtTile;
 use benilla_world::terrain_stream::{terrain_height_under_cached, TerrainStreamer};
 
-const PATH: &str = "/dev/shm/classiccraft_geom_v1.shm";
+const NAME: &str = "classiccraft_geom_v1.shm";
 const MAGIC: u32 = 0x6D63_6731; // 'mcg1'
 const VERSION: u32 = 3;
 const OFF_WRITER_PID: usize = 8;
@@ -84,7 +82,7 @@ impl Plugin for GeomPlugin {
 
 #[derive(Resource, Default)]
 pub(crate) struct Geom {
-    map: Option<MmapMut>,
+    map: Option<crate::link::SharedMap>,
     retry_at: f32,
     /// Bumped by every `MSG_CLEAR`: the mod has dropped everything sent before it.
     pub(crate) epoch: u32,
@@ -106,28 +104,16 @@ impl Geom {
             return;
         }
         self.retry_at = now + 5.0;
-        let file = match OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(PATH)
-        {
-            Ok(f) => f,
-            Err(e) => return warn!("classiccraft: cannot open {PATH}: {e}"),
-        };
-        if file.set_len(TOTAL as u64).is_err() {
-            return;
-        }
-        // SAFETY: our file; the layout below is the protocol's, the mod reads it concurrently.
-        let Ok(mut map) = (unsafe { MmapMut::map_mut(&file) }) else {
-            return;
+        // Ours; the layout below is the protocol's, the mod reads it concurrently.
+        let mut map = match crate::link::open(NAME, TOTAL, true) {
+            Ok(m) => m,
+            Err(e) => return warn!("classiccraft: cannot open {}: {e}", crate::link::describe(NAME)),
         };
         map[..TOTAL].fill(0);
         map[0..4].copy_from_slice(&MAGIC.to_le_bytes());
         map[4..8].copy_from_slice(&VERSION.to_le_bytes());
         map[OFF_WRITER_PID..OFF_WRITER_PID + 4].copy_from_slice(&std::process::id().to_le_bytes());
-        info!("classiccraft: geometry export {PATH} ready");
+        info!("classiccraft: geometry export {} ready", crate::link::describe(NAME));
         self.map = Some(map);
         self.sent.clear();
         self.evict_tail = 0;

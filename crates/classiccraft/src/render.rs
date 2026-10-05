@@ -8,7 +8,6 @@
 //! Minecraft space to Bevy: `(-x, y, -z)·S` (see [`crate::bridge`]); a rotation, so winding holds.
 
 use std::collections::HashMap;
-use std::fs::OpenOptions;
 use std::sync::atomic::{fence, Ordering};
 
 use benilla_assets::materials::WowModelMaterial;
@@ -29,11 +28,10 @@ use bevy::render::render_resource::{
 use bevy::render::renderer::RenderQueue;
 use bevy::render::texture::GpuImage;
 use bevy::render::{Render, RenderApp, RenderSystems};
-use memmap2::MmapMut;
 
 use crate::bridge::S;
 
-const PATH: &str = "/dev/shm/classiccraft_render_v1.shm";
+const NAME: &str = "classiccraft_render_v1.shm";
 const MAGIC: u32 = 0x6D63_7772; // "mcwr"
 const VERSION: u32 = 1;
 const OFF_WRITER_PID: usize = 8;
@@ -129,7 +127,7 @@ struct Dynamic {
 
 #[derive(Resource, Default)]
 struct RenderLink {
-    map: Option<MmapMut>,
+    map: Option<crate::link::SharedMap>,
     retry_at: f32,
     writer_pid: u32,
     atlas: Option<Handle<Image>>,
@@ -158,21 +156,15 @@ impl RenderLink {
             return;
         }
         self.retry_at = now + 2.0;
-        let Ok(file) = OpenOptions::new().read(true).write(true).open(PATH) else {
-            return;
-        };
-        if file.metadata().map(|m| m.len()).unwrap_or(0) < TOTAL as u64 {
-            return;
-        }
-        // SAFETY: Minecraft's render file; we write only the reader's header words and the tail.
-        let Ok(map) = (unsafe { MmapMut::map_mut(&file) }) else {
-            return;
+        // Minecraft's render file; we write only the reader's header words and the tail.
+        let Ok(map) = crate::link::open(NAME, TOTAL, false) else {
+            return; // Minecraft creates it; not running yet
         };
         let word = |off: usize| u32::from_le_bytes(map[off..off + 4].try_into().unwrap());
         if word(0) != MAGIC || word(4) != VERSION {
             return;
         }
-        info!("classiccraft: render link attached to {PATH}");
+        info!("classiccraft: render link attached to {}", crate::link::describe(NAME));
         self.map = Some(map);
         self.writer_pid = 0;
     }

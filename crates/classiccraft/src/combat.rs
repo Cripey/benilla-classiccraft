@@ -15,18 +15,16 @@
 //!   the ring as kind [`RING_HARVEST`] for the mod to drop the ore.
 
 use std::collections::HashSet;
-use std::fs::OpenOptions;
 use std::sync::atomic::{fence, Ordering};
 
 use benilla_app::external::{
     ChatIn, ChatOut, CustomPacketIn, CustomPacketOut, ExternalDriveSet, NearbyUnits, SelfReport,
 };
 use bevy::prelude::*;
-use memmap2::MmapMut;
 
 use crate::bridge::{Bridge, S};
 
-const PATH: &str = "/dev/shm/classiccraft_actors_v1.shm";
+const NAME: &str = "classiccraft_actors_v1.shm";
 const MAGIC: u32 = 0x6D63_7761; // "mcwa"
 const VERSION: u32 = 7; // 7: + the visible model's height and width per actor
 const MAX_ACTORS: usize = 64;
@@ -157,7 +155,7 @@ impl Plugin for CombatPlugin {
 
 #[derive(Resource, Default)]
 struct Combat {
-    map: Option<MmapMut>,
+    map: Option<crate::link::SharedMap>,
     retry_at: f32,
     frame: u64,
     /// What the server was last told (`CMSG_CC_HELLO`) and when.
@@ -173,26 +171,14 @@ impl Combat {
             return;
         }
         self.retry_at = now + 5.0;
-        let Ok(file) = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(PATH)
-        else {
-            return;
-        };
-        if file.set_len(TOTAL as u64).is_err() {
-            return;
-        }
-        // SAFETY: our file; the mod only reads it.
-        let Ok(mut map) = (unsafe { MmapMut::map_mut(&file) }) else {
+        // Ours; the mod only reads it.
+        let Ok(mut map) = crate::link::open(NAME, TOTAL, true) else {
             return;
         };
         map[..TOTAL].fill(0);
         map[0..4].copy_from_slice(&MAGIC.to_le_bytes());
         map[4..8].copy_from_slice(&VERSION.to_le_bytes());
-        info!("classiccraft: combat link {PATH} ready");
+        info!("classiccraft: combat link {} ready", crate::link::describe(NAME));
         self.map = Some(map);
     }
 

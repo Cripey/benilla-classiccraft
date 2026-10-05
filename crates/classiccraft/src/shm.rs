@@ -2,12 +2,10 @@
 //! publishes our body (`McwowWowPlayerState`) and reads Minecraft's camera (`McwowMcCameraState`).
 //! Offsets are the header's documented byte layout; both slots are seqlocks (odd while writing).
 
-use std::fs::OpenOptions;
 use std::sync::atomic::{fence, Ordering};
 
-use memmap2::MmapMut;
 
-pub const PATH: &str = "/dev/shm/classiccraft_v1.shm";
+pub const NAME: &str = "classiccraft_v1.shm";
 const MAGIC: u32 = 0x6D63_7731; // 'mcw1'
 const VERSION: u32 = 3;
 const TOTAL_SIZE: usize = 260;
@@ -79,24 +77,15 @@ pub struct McCamera {
 }
 
 pub struct Shm {
-    map: MmapMut,
+    map: crate::link::SharedMap,
 }
 
 impl Shm {
     /// Create or reuse the file; a file of another layout is wiped, as `bridge::Init` does.
     pub fn open() -> std::io::Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(PATH)?;
-        if file.metadata()?.len() < TOTAL_SIZE as u64 {
-            file.set_len(TOTAL_SIZE as u64)?;
-        }
-        // SAFETY: the file is ours to share; every access below is bounds-checked against the
-        // fixed layout, and concurrent writers are the seqlock protocol's concern.
-        let map = unsafe { MmapMut::map_mut(&file)? };
+        // Every access below is bounds-checked against the fixed layout; concurrent writers are
+        // the seqlock protocol's concern.
+        let map = crate::link::open(NAME, TOTAL_SIZE, true)?;
         let mut shm = Self { map };
         if shm.u32(OFF_MAGIC) != MAGIC || shm.u32(OFF_VERSION) != VERSION {
             shm.map[..TOTAL_SIZE].fill(0);

@@ -10,7 +10,7 @@
 //!   no elbows or knees: the limb takes where its end goes, the bend is lost);
 //! - the head turns as the head bone does against the torso.
 //!
-//! Written to `~/.local/share/classiccraft/dances/<race>_<sex>.ccd`, where the Fabric mod
+//! Written to `<data dir>/dances/<race>_<sex>.ccd`, where the Fabric mod
 //! (`McwowDance`) reads them; nothing of the client's data leaves the user's machine. Generated
 //! once (a missing file is made again).
 //!
@@ -93,7 +93,7 @@ fn write_self(report: Res<benilla_app::external::SelfReport>, mut written: Local
 }
 
 pub fn dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share/classiccraft/dances"))
+    crate::link::data_dir().map(|d| d.join("dances"))
 }
 
 /// Writes every race and gender's dance file that is not there yet.

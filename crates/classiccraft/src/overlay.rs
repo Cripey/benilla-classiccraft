@@ -8,7 +8,6 @@
 //! A frame is up to 15 MB; copying it into an `Image` cost the main thread a full copy, the
 //! un-premultiply, and Bevy's extract clone every frame (~25% of a frame, 2026-10-02 profile).
 
-use std::fs::OpenOptions;
 use std::sync::atomic::{fence, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -24,11 +23,10 @@ use bevy::render::renderer::RenderQueue;
 use bevy::render::texture::GpuImage;
 use bevy::render::{Extract, ExtractSchedule, Render, RenderApp, RenderSystems};
 use bevy::tasks::ComputeTaskPool;
-use memmap2::MmapMut;
 
 use crate::bridge::Bridge;
 
-const PATH: &str = "/dev/shm/classiccraft_overlay_v1.shm";
+const NAME: &str = "classiccraft_overlay_v1.shm";
 const MAGIC: u32 = 0x6D63_6F31; // 'mco1'
 const VERSION: u32 = 2;
 const MAX_W: usize = 2560;
@@ -84,7 +82,7 @@ impl Plugin for OverlayPlugin {
 /// Minecraft's overlay file, mapped once it exists.
 #[derive(Resource, Default)]
 pub struct OverlayFile {
-    map: Option<MmapMut>,
+    map: Option<crate::link::SharedMap>,
     retry_at: f32,
     /// The last frame's size: Minecraft's framebuffer, the space its cursor lives in.
     frame_size: Option<UVec2>,
@@ -110,22 +108,16 @@ impl OverlayFile {
             return;
         }
         self.retry_at = now + 2.0;
-        let Ok(file) = OpenOptions::new().read(true).write(true).open(PATH) else {
-            return; // Minecraft creates it; not running yet
-        };
-        if file.metadata().map(|m| m.len()).unwrap_or(0) < TOTAL as u64 {
-            return;
-        }
-        // SAFETY: Minecraft's overlay file; we touch the reader's header words, the triple-buffer
+        // Minecraft's overlay file; we touch the reader's header words, the triple-buffer
         // state word (atomically) and the input ring, as the protocol assigns them.
-        let Ok(map) = (unsafe { MmapMut::map_mut(&file) }) else {
-            return;
+        let Ok(map) = crate::link::open(NAME, TOTAL, false) else {
+            return; // Minecraft creates it; not running yet
         };
         let word = |off: usize| u32::from_le_bytes(map[off..off + 4].try_into().unwrap());
         if word(0) != MAGIC || word(4) != VERSION {
             return;
         }
-        info!("classiccraft: overlay link attached to {PATH}");
+        info!("classiccraft: overlay link attached to {}", crate::link::describe(NAME));
         self.map = Some(map);
     }
 
@@ -264,7 +256,7 @@ fn show_overlay(
 /// reader state, and the texture's current content.
 #[derive(Resource, Default)]
 struct OverlayUpload {
-    map: Option<MmapMut>,
+    map: Option<crate::link::SharedMap>,
     retry_at: Option<Instant>,
     /// Our front slot of the triple buffer, 2 until we take one (reset when the writer changes).
     front: usize,
@@ -296,16 +288,10 @@ impl OverlayUpload {
             return;
         }
         self.retry_at = Some(Instant::now() + Duration::from_secs(2));
-        let Ok(file) = OpenOptions::new().read(true).write(true).open(PATH) else {
-            return;
-        };
-        if file.metadata().map(|m| m.len()).unwrap_or(0) < TOTAL as u64 {
-            return;
-        }
-        // SAFETY: Minecraft's overlay file; this side touches only the triple-buffer state word
+        // Minecraft's overlay file; this side touches only the triple-buffer state word
         // (atomically) and reads the slot it owns, as the protocol assigns them.
-        let Ok(map) = (unsafe { MmapMut::map_mut(&file) }) else {
-            return;
+        let Ok(map) = crate::link::open(NAME, TOTAL, false) else {
+            return; // Minecraft creates it; not running yet
         };
         let word = |off: usize| u32::from_le_bytes(map[off..off + 4].try_into().unwrap());
         if word(0) != MAGIC || word(4) != VERSION {
@@ -331,7 +317,7 @@ fn upload_overlay(
     let Some(map) = up.map.as_mut() else {
         return;
     };
-    let word = |map: &MmapMut, off: usize| u32::from_le_bytes(map[off..off + 4].try_into().unwrap());
+    let word = |map: &crate::link::SharedMap, off: usize| u32::from_le_bytes(map[off..off + 4].try_into().unwrap());
     let pid = word(map, OFF_WRITER_PID);
     if pid != up.writer_pid {
         up.writer_pid = pid;

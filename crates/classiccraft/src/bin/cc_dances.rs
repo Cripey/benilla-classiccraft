@@ -1,5 +1,7 @@
 //! Offline check of the dance extraction (`dances.rs`): `cc_dances <out dir>` writes every race and
 //! gender's file there and prints each one's frame count and first frame. Reads `$WOW_DATA`.
+#[path = "../link.rs"]
+mod link;
 #[path = "../dances.rs"]
 #[allow(dead_code)]
 mod dances;

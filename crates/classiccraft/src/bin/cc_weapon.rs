@@ -1,6 +1,6 @@
 //! Offline, on demand (2026-10-04, user: WoW weapon models as blocky 3D Minecraft weapons, specific
 //! ones only): one WoW item display's weapon model as a Minecraft item model made of cubes, into the
-//! LOCAL resource pack the mod loads (`~/.local/share/classiccraft/resourcepack`, or `$OUT`) - built
+//! LOCAL resource pack the mod loads (`<data dir>/resourcepack`, `link.rs`, or `$OUT`) - built
 //! from the user's own install, never shipped.
 //!
 //! The M2's opaque and alpha-keyed batches (glow layers are additive and left out) are sampled into
@@ -38,6 +38,9 @@ impl Tex {
     }
 }
 
+#[path = "../link.rs"]
+mod link;
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 2 {
@@ -47,7 +50,7 @@ fn main() -> Result<()> {
     let key = &args[1];
     let res: usize = args.get(2).map(|s| s.parse()).transpose()?.unwrap_or(32);
     let out = std::env::var_os("OUT").map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(std::env::var_os("HOME").expect("$HOME")).join(".local/share/classiccraft/resourcepack")
+        link::data_dir().expect("no data directory ($HOME / %APPDATA%)").join("resourcepack")
     });
     let data = benilla_formats::wow_data().context("no WoW install ($WOW_DATA)")?;
     let mut chain = benilla_formats::open_chain(&data)?;

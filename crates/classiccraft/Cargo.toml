@@ -24,6 +24,13 @@ memmap2 = "0.9.10"
 benilla-m2 = { path = "../benilla-m2" }
 image = { version = "0.25", default-features = false, features = ["png"] }
 anyhow = "1"
+# The music discs: decode the client's MP3/WAV (kira, as benilla-app), encode the Ogg Vorbis
+# Minecraft streams (was ffmpeg in the mod; not on Windows).
+kira = { version = "0.12", default-features = false, features = ["mp3", "wav", "pcm", "adpcm"] }
+vorbis_rs = "0.5"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Memory"] }
 
 [build-dependencies]
 benilla-buildstamp = { path = "../benilla-buildstamp" }
