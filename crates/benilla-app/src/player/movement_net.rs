@@ -15,6 +15,11 @@ use super::Player;
 /// The `MSG_MOVE_HEARTBEAT` period (s) while moving: the reference arms its send deadline
 /// `[mgr+0x130]` to now + 500 ms (`0x615b80`).
 const HEARTBEAT_INTERVAL: f32 = 0.5;
+/// classiccraft: the shortest gap (s) between two `SET_FACING`s - the server's 50 ms tick. One per
+/// frame at an uncapped frame rate (Windows, 2026-10-05) piled 301 into one vmangos session update
+/// while it stalled, and its AntiFlood (`WorldSession::AllowPacket`, > 300) kicked us to the login
+/// screen. A held-back change goes out on the next due frame, so a turn still ends on its facing.
+const FACING_INTERVAL: f32 = 0.05;
 /// The flag bits we send, each with its tail where it has one (`FALLING` the jump quad, `SWIMMING`
 /// the pitch, `ON_TRANSPORT` the deck pose). `FALLING_FAR` changes no opcode; it rides the arc's
 /// packets as the reference's live flags do.
@@ -263,8 +268,15 @@ pub(super) fn stream_self_movement(
     // reference drains each facing set into a send (`0x615fc6` push `0xda`). None while a turn bit
     // is set, which already rotates the mover for observers, and not gated on `sent`: the facing
     // report and the broadcaster are independent emitters.
-    if wire_flags & TURN == 0 && facing != player.last_facing {
+    // classiccraft: rate-limited (`FACING_INTERVAL`); a change held back keeps `last_facing` at
+    // the facing last reported, so a later frame reports it.
+    let facing_held = wire_flags & TURN == 0
+        && facing != player.last_facing
+        && !sent
+        && now - player.last_facing_sent < FACING_INTERVAL;
+    if wire_flags & TURN == 0 && facing != player.last_facing && !facing_held {
         send_move!(MoveKind::SetFacing);
+        player.last_facing_sent = now;
     }
     // Boarding or leaving a deck has no opcode of its own, so a heartbeat carries the flip that
     // frame if nothing else went out.
@@ -288,8 +300,10 @@ pub(super) fn stream_self_movement(
         player.last_heartbeat = now;
     }
     // The facing compare is against the previous frame's facing, sent or not, so a keyboard turn
-    // leaves no catch-up `SET_FACING` behind.
-    player.last_facing = facing;
+    // leaves no catch-up `SET_FACING` behind (a held-back one is still owed).
+    if !facing_held {
+        player.last_facing = facing;
+    }
     player.move_flags = wire_flags;
 }
 
@@ -1073,6 +1087,68 @@ mod tests {
     }
 
     /// One idle frame at `pos`.
+    /// classiccraft: a mouse-turn at 1000 frames a second sends at most one `SET_FACING` per
+    /// `FACING_INTERVAL`, and the facing it ends on still goes out.
+    #[test]
+    fn facing_reports_are_rate_limited_and_the_last_one_is_owed() {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let mut player = Player {
+            move_flags: move_flags::FORWARD,
+            ..Default::default()
+        };
+        let frame = |player: &mut Player, now: f32| {
+            stream_self_movement(
+                &tx,
+                player,
+                move_flags::FORWARD,
+                0.0,
+                ArcEdges {
+                    jumped: false,
+                    wire_launch: false,
+                    air_nudged: false,
+                    landed: false,
+                    fall_time: 0,
+                },
+                now,
+                &[],
+                None,
+                None,
+                no_skip(),
+            );
+        };
+        let mut facings = 0;
+        let mut last = None;
+        for i in 0..200 {
+            player.face_yaw = 0.5 + i as f32 * 0.001;
+            frame(&mut player, 1.0 + i as f32 * 0.001);
+            while let Ok(ClientCommand::Move {
+                kind, orientation, ..
+            }) = rx.try_recv()
+            {
+                if kind == MoveKind::SetFacing {
+                    facings += 1;
+                    last = Some(orientation);
+                }
+            }
+        }
+        assert!(facings <= 5, "{facings} facing reports in 0.2 s");
+        // The turn stopped; the next due frame reports where it ended.
+        frame(&mut player, 1.3);
+        while let Ok(ClientCommand::Move {
+            kind, orientation, ..
+        }) = rx.try_recv()
+        {
+            if kind == MoveKind::SetFacing {
+                last = Some(orientation);
+            }
+        }
+        assert_eq!(
+            last,
+            Some(0.5 + 199.0 * 0.001),
+            "the final facing is reported"
+        );
+    }
+
     fn idle_frame(tx: &Sender<ClientCommand>, player: &mut Player, pos: bevy::prelude::Vec3) {
         player.pos = pos;
         stream_self_movement(

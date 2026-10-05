@@ -364,6 +364,8 @@ pub(crate) struct Player {
     pub(crate) owes_worldport_ack: bool,
     /// `Time::elapsed_secs` when we last sent a heartbeat.
     pub(super) last_heartbeat: f32,
+    /// classiccraft: `Time::elapsed_secs` when we last sent a `SET_FACING` (its rate limit).
+    pub(super) last_facing_sent: f32,
     /// Milliseconds of movement the settle hold skipped, sent as `CMSG_MOVE_TIME_SKIPPED` on the
     /// release edge; fractional because it accrues a frame `dt` at a time.
     pub(super) skipped_ms: f32,
