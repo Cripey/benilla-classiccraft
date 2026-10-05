@@ -36,6 +36,12 @@ const OFF_WRITER_PID: usize = 8;
 const OFF_STATE: usize = 12;
 const OFF_MC_FLAGS: usize = 36;
 const MC_SCREEN: u32 = 1 << 1;
+/// Minecraft is closing (launcher phase 2, 2026-10-05): WoW closes with it.
+const MC_QUIT: u32 = 1 << 2;
+/// Reader word (was reserved): 1 while WoW runs, 2 once it is closing - Minecraft closes with it.
+const OFF_WOW_STATE: usize = 60;
+const WOW_RUNNING: u32 = 1;
+const WOW_QUIT: u32 = 2;
 const OFF_SLOT_HDR: usize = 64;
 const SLOT_HDR_BYTES: usize = 32;
 const OFF_PIXELS: usize = 256;
@@ -60,8 +66,10 @@ impl Plugin for OverlayPlugin {
         app.init_resource::<OverlayFile>()
             .init_resource::<OverlayView>()
             .insert_resource(shared.clone())
+            .init_resource::<LinkedQuit>()
             .add_systems(Startup, spawn_overlay)
-            .add_systems(Update, show_overlay);
+            .add_systems(Update, (show_overlay, linked_quit))
+            .add_systems(Last, announce_quit);
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
@@ -249,6 +257,81 @@ fn show_overlay(
         if let Some(image) = images.get_mut(&view.image) {
             *image = blank(shape.size.x, shape.size.y);
         }
+    }
+}
+
+/// Closing together (launcher phase 2, 2026-10-05): Minecraft quitting closes WoW, WoW quitting
+/// tells Minecraft (which saves its world and closes). Each side acts only on a flag it saw clear
+/// first this session, so a flag left in the file by an earlier run closes nothing.
+/// `CLASSICCRAFT_LINKED_QUIT=0` turns it off here (development: restarting WoW alone).
+/// The launcher's "quit" asks through `CLASSICCRAFT_QUIT_FILE`: once that file exists, WoW closes
+/// as by its own Exit (so Minecraft hears of it), polled once a second.
+#[derive(Resource)]
+struct LinkedQuit {
+    on: bool,
+    /// Minecraft's flags were seen without MC_QUIT while the file was open.
+    mc_seen_running: bool,
+    fired: bool,
+    quit_file: Option<std::path::PathBuf>,
+    next_poll: f32,
+}
+
+impl Default for LinkedQuit {
+    fn default() -> Self {
+        Self {
+            on: std::env::var("CLASSICCRAFT_LINKED_QUIT").as_deref() != Ok("0"),
+            mc_seen_running: false,
+            fired: false,
+            quit_file: std::env::var_os("CLASSICCRAFT_QUIT_FILE")
+                .filter(|f| !f.is_empty())
+                .map(std::path::PathBuf::from),
+            next_poll: 0.0,
+        }
+    }
+}
+
+fn linked_quit(
+    mut file: ResMut<OverlayFile>,
+    mut lq: ResMut<LinkedQuit>,
+    time: Res<Time>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let now = time.elapsed_secs();
+    if !lq.fired && now >= lq.next_poll {
+        lq.next_poll = now + 1.0;
+        if lq.quit_file.as_ref().is_some_and(|f| f.exists()) {
+            lq.fired = true;
+            info!("classiccraft: the launcher asks WoW to close");
+            exit.write(AppExit::Success);
+            return;
+        }
+    }
+    if !file.is_open() {
+        return;
+    }
+    file.put_u32(OFF_WOW_STATE, WOW_RUNNING);
+    if !lq.on || lq.fired {
+        return;
+    }
+    let quitting = file.u32(OFF_MC_FLAGS) & MC_QUIT != 0;
+    if !quitting {
+        lq.mc_seen_running = true;
+    } else if lq.mc_seen_running {
+        lq.fired = true;
+        info!("classiccraft: Minecraft is closing - closing WoW too");
+        exit.write(AppExit::Success);
+    }
+}
+
+/// On the way out, however WoW is closed: tell Minecraft.
+fn announce_quit(
+    mut exits: MessageReader<AppExit>,
+    mut file: ResMut<OverlayFile>,
+    lq: Res<LinkedQuit>,
+) {
+    if exits.read().next().is_some() && lq.on && file.is_open() {
+        file.put_u32(OFF_WOW_STATE, WOW_QUIT);
+        info!("classiccraft: WoW is closing - told Minecraft");
     }
 }
 
