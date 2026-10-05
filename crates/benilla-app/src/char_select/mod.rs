@@ -156,6 +156,12 @@ pub(crate) struct Roster {
     pub(super) pending_pick: Option<u64>,
     /// `WOW_CHAR`: auto-pick this name on the first roster only.
     env_char: Option<String>,
+    /// classiccraft (fork only): `WOW_CREATE_CHAR=<name>` - when the roster lacks the `WOW_CHAR`
+    /// character and this names it, create it (the launcher's "New save": a Blockborn is a hidden
+    /// Human warrior, the server makes it neutral) and keep the fast path armed for the fresh
+    /// roster. Sent once.
+    env_create: Option<String>,
+    create_sent: bool,
     /// A just-created character's name, whose row gets selected (the reference's
     /// `SELECT_LAST_CHARACTER`, keyed by name to survive the create/enum race).
     just_created: Option<String>,
@@ -324,6 +330,7 @@ fn apply_roster_policy(
 ) {
     if !roster.env_read {
         roster.env_read = true;
+        roster.env_create = std::env::var("WOW_CREATE_CHAR").ok().filter(|n| !n.is_empty());
         // `WOW_RIG` outranks `WOW_CHAR`: the rig may have to create its character first, which
         // this one-shot fast path cannot wait for.
         roster.env_char = match rig.as_deref() {
@@ -396,6 +403,28 @@ fn apply_roster_policy(
                     let guid = c.guid;
                     info!("char select: WOW_CHAR={name} — fast path");
                     send_pick(&mut roster, &pick, guid);
+                }
+                None if !roster.create_sent
+                    && roster
+                        .env_create
+                        .as_deref()
+                        .is_some_and(|c| c.eq_ignore_ascii_case(&name)) =>
+                {
+                    // classiccraft (fork only): make it, then the fresh roster takes the fast path.
+                    info!("char select: WOW_CREATE_CHAR={name} — creating it");
+                    roster.create_sent = true;
+                    let _ = pick.0.send(CharRequest::Create(benilla_protocol::CharCreateReq {
+                        name: name.clone(),
+                        race: benilla_protocol::messages::RACE_HUMAN,
+                        class: benilla_protocol::messages::CLASS_WARRIOR,
+                        gender: benilla_protocol::messages::GENDER_MALE,
+                        skin: 0,
+                        face: 0,
+                        hair_style: 0,
+                        hair_color: 0,
+                        facial_hair: 0,
+                    }));
+                    roster.env_char = Some(name);
                 }
                 None => {
                     warn!("char select: WOW_CHAR={name} not on this account — showing roster");
