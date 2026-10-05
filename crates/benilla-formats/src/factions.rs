@@ -21,6 +21,25 @@ const FACTION: &str = "DBFilesClient\\Faction.dbc";
 const FACTION_GROUP: &str = "DBFilesClient\\FactionGroup.dbc";
 const CHR_RACES: &str = "DBFilesClient\\ChrRaces.dbc";
 
+/// classiccraft (fork only): the neutral Minecraft race's faction template (VMaNGOS
+/// `sql/custom/classiccraft_neutral.sql`, `ClassicCraftNeutral.cpp`): a player (group 1) friendly to
+/// Alliance and Horde, hostile to monsters. Not in the client's DBC; [`load_faction_catalog`] adds it.
+pub const NEUTRAL_FACTION_TEMPLATE: u32 = 990;
+
+/// classiccraft (fork only): the race the reputation helpers take for a neutral Minecraft character,
+/// whose base standing is each faction's best fitting slot (the server's `NeutralRepIndex`).
+pub const NEUTRAL_RACE: u8 = u8::MAX;
+
+/// classiccraft (fork only): the race to hand [`FactionInfo`]'s helpers for a player of `race`
+/// whose own faction template is `own_template`: [`NEUTRAL_RACE`] for the neutral template.
+pub fn reputation_race(race: u8, own_template: Option<u32>) -> u8 {
+    if own_template == Some(NEUTRAL_FACTION_TEMPLATE) {
+        NEUTRAL_RACE
+    } else {
+        race
+    }
+}
+
 /// One `FactionTemplate.dbc` row: the fields the reaction comparator reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FactionTemplate {
@@ -111,6 +130,9 @@ impl FactionInfo {
     /// only in this loop's accept block (`0x4d5555`). Unlike vmangos's `GetIndexFitTo`, a slot
     /// with both masks zero is rejected (`0x4d550b`), and the last matching slot wins.
     pub fn slot_for(&self, race: u8, class: u8) -> Option<usize> {
+        if race == NEUTRAL_RACE {
+            return self.neutral_slot(class);
+        }
         let race_mask = 1u32 << (race.max(1) - 1);
         let class_mask = 1u32 << (class.max(1) - 1);
         (0..4).rfind(|&i| {
@@ -119,6 +141,23 @@ impl FactionInfo {
                 && (races == 0 || races & race_mask != 0)
                 && (classes == 0 || classes & class_mask != 0)
         })
+    }
+
+    /// classiccraft (fork only): the neutral race's slot, as the server's `NeutralRepIndex`: among
+    /// the slots with a mask that fit the class (any race), the highest base, the first on a tie.
+    fn neutral_slot(&self, class: u8) -> Option<usize> {
+        let class_mask = 1u32 << (class.max(1) - 1);
+        let mut best: Option<usize> = None;
+        for i in 0..4 {
+            let (races, classes) = (self.race_masks[i], self.class_masks[i]);
+            if races == 0 && classes == 0 || classes != 0 && classes & class_mask == 0 {
+                continue;
+            }
+            if best.is_none_or(|b| self.base[i] > self.base[b]) {
+                best = Some(i);
+            }
+        }
+        best
     }
 
     /// The base reputation for a player of `race`/`class`, 0 if no slot fits. The wire standing
@@ -131,13 +170,18 @@ impl FactionInfo {
     /// seed for a new character's flag byte (vmangos `ReputationMgr::GetDefaultStateFlags`). The
     /// reference never reads this column; the byte it displays is the wire's.
     pub fn default_flags_for(&self, race: u8, class: u8) -> u32 {
-        self.slot_for(race, class).map_or(0, |i| self.flags[i])
+        // classiccraft (fork only): the neutral race is never at war by default.
+        let at_war = if race == NEUTRAL_RACE { u32::from(faction_flags::AT_WAR) } else { 0 };
+        self.slot_for(race, class).map_or(0, |i| self.flags[i] & !at_war)
     }
 
     /// Whether the unit tooltip shows this faction's name to a player of `race`/`class`: the unit
     /// builder `0x529fe0` takes the first matching slot, not the last, and shows the line unless
     /// its flags carry `0x4`. A zero race mask matches on the class mask instead.
     pub fn tooltip_shows_for(&self, race: u8, class: u8) -> bool {
+        if race == NEUTRAL_RACE {
+            return self.slot_for(race, class).is_some_and(|i| self.flags[i] & 0x4 == 0);
+        }
         let race_bit = 1u32 << (race.max(1) - 1);
         let class_bit = 1u32 << (class.max(1) - 1);
         for i in 0..4 {
@@ -415,6 +459,18 @@ pub fn load_faction_catalog(chain: &mut Chain) -> Result<FactionCatalog> {
         }
     }
 
+    // classiccraft (fork only): the neutral Minecraft race's template, server-side only.
+    templates
+        .entry(NEUTRAL_FACTION_TEMPLATE)
+        .or_insert(FactionTemplate {
+            faction: NEUTRAL_FACTION_TEMPLATE,
+            group_mask: 0b0001,
+            friend_group_mask: 0b0110,
+            enemy_group_mask: 0b1000,
+            enemies: [0; 4],
+            friends: [0; 4],
+        });
+
     let bytes = chain
         .read_file(FACTION)
         .with_context(|| format!("reading {FACTION}"))?;
@@ -500,6 +556,34 @@ mod tests {
             enemies: [0; 4],
             friends: [0; 4],
         }
+    }
+
+    /// classiccraft (fork only): the neutral race takes the best fitting slot, never at war -
+    /// Stormwind's row: Alliance 3100, Horde -42000 (at war), Human 4000.
+    #[test]
+    fn the_neutral_race_takes_the_best_slot() {
+        let sw = FactionInfo {
+            rep_index: 19,
+            team: 469,
+            race_masks: [76, 178, 1, 0],
+            class_masks: [0; 4],
+            base: [3100, -42000, 4000, 0],
+            flags: [17, 6, 17, 0],
+        };
+        assert_eq!(sw.base_for(2, 1), -42000, "an orc is hated");
+        assert_eq!(sw.base_for(NEUTRAL_RACE, 1), 4000);
+        assert_eq!(sw.default_flags_for(NEUTRAL_RACE, 1), 17);
+        // A class-gated slot only counts for its classes.
+        let cc = FactionInfo {
+            race_masks: [255, 40, 0, 0],
+            class_masks: [479, 1024, 0, 0],
+            base: [0, 2000, 0, 0],
+            ..sw
+        };
+        assert_eq!(cc.base_for(NEUTRAL_RACE, 11), 2000, "a druid (class 11) fits 1024");
+        assert_eq!(cc.base_for(NEUTRAL_RACE, 1), 0, "a warrior only fits 479");
+        assert_eq!(reputation_race(1, Some(NEUTRAL_FACTION_TEMPLATE)), NEUTRAL_RACE);
+        assert_eq!(reputation_race(1, Some(1)), 1);
     }
 
     /// Every branch, in the order `0x606640` tests them, and enemy-beats-friend precedence.

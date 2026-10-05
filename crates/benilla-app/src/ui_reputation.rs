@@ -103,7 +103,11 @@ fn feed_reputation(
     };
     let catalog = factions_res.catalog();
     let (race, class) = (
-        store.0.unit_race().unwrap_or(0),
+        // classiccraft (fork only): the neutral Minecraft race's base standings.
+        benilla_formats::reputation_race(
+            store.0.unit_race().unwrap_or(0),
+            store.0.unit_faction_template(),
+        ),
         store.0.unit_class().unwrap_or(0),
     );
     let watched = store

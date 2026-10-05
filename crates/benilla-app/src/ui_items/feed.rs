@@ -572,6 +572,8 @@ pub(super) fn feed_player_req(
     }
     let race = store.0.unit_race().unwrap_or(0);
     let class = store.0.unit_class().unwrap_or(0);
+    // classiccraft (fork only): the neutral Minecraft race's base standings.
+    let rep_race = benilla_formats::reputation_race(race, store.0.unit_faction_template());
     let mut rep_ranks = std::collections::HashMap::new();
     if let Some(cat) = factions.as_deref().map(|f| f.catalog()) {
         for (id, info) in cat.reputation_factions() {
@@ -582,7 +584,7 @@ pub(super) fn feed_player_req(
                 .unwrap_or(0);
             rep_ranks.insert(
                 id,
-                benilla_formats::reputation_rank(info.base_for(race, class) + standing),
+                benilla_formats::reputation_rank(info.base_for(rep_race, class) + standing),
             );
         }
     }

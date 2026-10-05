@@ -970,7 +970,11 @@ pub(crate) fn enrich_unit(
             let faction_id = catalog.template(store.0.unit_faction_template()?)?.faction;
             let info = catalog.reputation_faction(faction_id)?;
             let self_store = self_store?;
-            let race = self_store.0.unit_race().unwrap_or(0);
+            // classiccraft (fork only): the neutral Minecraft race.
+            let race = benilla_formats::reputation_race(
+                self_store.0.unit_race().unwrap_or(0),
+                self_store.0.unit_faction_template(),
+            );
             let class = self_store.0.unit_class().unwrap_or(0);
             info.tooltip_shows_for(race, class)
                 .then(|| catalog.faction_name(faction_id).map(str::to_string))

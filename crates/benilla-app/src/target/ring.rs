@@ -434,7 +434,11 @@ pub(crate) fn ring_reaction(
                 .0
                 .get(info.rep_index as usize)
                 .map_or(0, |&(_flags, s)| s);
-            let race = self_store.0.unit_race().unwrap_or(0);
+            // classiccraft (fork only): the neutral Minecraft race's base standings.
+            let race = benilla_formats::reputation_race(
+                self_store.0.unit_race().unwrap_or(0),
+                self_store.0.unit_faction_template(),
+            );
             let class = self_store.0.unit_class().unwrap_or(0);
             return Some(reputation_rank(info.base_for(race, class) + standing));
         }
